@@ -1,0 +1,13 @@
+{
+  "name": "gastos-gropa",
+  "version": "2.0.0",
+  "description": "Gastos familiares de Iris y Sebas, en su propio servidor",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "prueba": "GASTOS_MODO_PRUEBA=1 DATA_DIR=./datos-prueba node server.js"
+  }
+}
