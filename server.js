@@ -119,15 +119,15 @@ function chargeCategory(s, b) {
   return v;
 }
 
-// Suma meses a una fecha AAAA-MM-DD conservando el día (o el último día
-// del mes si no existe, p. ej. 31 → 28). Como el corte es el 22, cada
-// cuota cae en el período siguiente.
-function addMonths(ds, k) {
-  const [y, m, d] = ds.split('-').map(Number);
-  const t = (m - 1) + k;
+// Fecha de cada cuota: la primera cae el día de la compra; las siguientes,
+// el 22 (día en que empieza cada corte), una por período.
+const CUT_DAY = 22;
+function cuotaDate(first, k) {
+  if (k === 0) return first;
+  const [y, m, d] = first.split('-').map(Number);
+  const t = (m - 1) - (d < CUT_DAY ? 1 : 0) + k; // mes en que empieza el corte de la cuota k
   const ny = y + Math.floor(t / 12), nm = ((t % 12) + 12) % 12;
-  const dim = new Date(ny, nm + 1, 0).getDate();
-  return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(Math.min(d, dim)).padStart(2, '0')}`;
+  return `${ny}-${String(nm + 1).padStart(2, '0')}-${CUT_DAY}`;
 }
 
 // Reparte un total en n cuotas iguales; la última ajusta los centavos.
@@ -297,7 +297,7 @@ async function api(req, res, url) {
     if (amounts[0] <= 0) fail(400, 'El monto es muy bajo para tantas cuotas.');
     const planId = auth.newId();
     const list = amounts.map((amount, k) => ({
-      ...exp, id: k === 0 ? exp.id : auth.newId(), amount, date: addMonths(exp.date, k), ts: exp.ts + k,
+      ...exp, id: k === 0 ? exp.id : auth.newId(), amount, date: cuotaDate(exp.date, k), ts: exp.ts + k,
       planId, cuota: k + 1, cuotas: n, planTotal: exp.amount,
       ...(k === 0 && clientId ? { clientId } : { clientId: undefined }),
     }));

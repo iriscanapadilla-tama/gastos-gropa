@@ -88,7 +88,7 @@ function mergePending() {
     const n = Number(p.body.cuotas) || 1;
     if (n === 1) { rows.push({ ...base, id: 'pendiente-' + p.clientId }); continue; }
     splitCuotas(p.body.amount, n).forEach((amount, k) => rows.push({
-      ...base, id: `pendiente-${p.clientId}-${k}`, amount, date: addMonths(p.body.date, k),
+      ...base, id: `pendiente-${p.clientId}-${k}`, amount, date: cuotaDate(p.body.date, k),
       planId: 'pendiente-' + p.clientId, cuota: k + 1, cuotas: n, planTotal: p.body.amount,
     }));
   }
@@ -196,13 +196,14 @@ function periodOfDate(ds) {
   const [y, m, d] = ds.split('-').map(Number);
   return periodFromStart(y, (m - 1) - (d < CUT_DAY ? 1 : 0));
 }
-// Mismo cálculo que el servidor para las compras en cuotas.
-function addMonths(ds, k) {
-  const [y, m, d] = ds.split('-').map(Number);
-  const t = (m - 1) + k;
+// Mismo cálculo que el servidor para las compras en cuotas: la primera cuota
+// cae el día de la compra; las siguientes, el 22 de cada corte.
+function cuotaDate(first, k) {
+  if (k === 0) return first;
+  const [y, m, d] = first.split('-').map(Number);
+  const t = (m - 1) - (d < CUT_DAY ? 1 : 0) + k;
   const ny = y + Math.floor(t / 12), nm = ((t % 12) + 12) % 12;
-  const dim = new Date(ny, nm + 1, 0).getDate();
-  return `${ny}-${pad(nm + 1)}-${pad(Math.min(d, dim))}`;
+  return `${ny}-${pad(nm + 1)}-${pad(CUT_DAY)}`;
 }
 function splitCuotas(total, n) {
   const per = Math.floor((total / n) * 100) / 100;
@@ -572,9 +573,9 @@ function updateInstallments() {
   if (!Number.isInteger(n) || n < 2 || n > 48) { $('exp-inst-hint').textContent = 'Elige entre 2 y 48 cuotas.'; return; }
   if (!(total > 0) || !ds) { $('exp-inst-hint').textContent = 'Escribe el monto total y la fecha de compra para ver las cuotas.'; return; }
   const parts = splitCuotas(total, n);
-  const first = periodLabel(periodOfDate(ds)), last = periodLabel(periodOfDate(addMonths(ds, n - 1)));
+  const first = periodLabel(periodOfDate(ds)), last = periodLabel(periodOfDate(cuotaDate(ds, n - 1)));
   const diff = parts[n - 1] !== parts[0] ? ` (la última de ${fmt(parts[n - 1])})` : '';
-  $('exp-inst-hint').textContent = `${n} cuotas de ${fmt(parts[0])}${diff}, una por período: de ${first} a ${last}.`;
+  $('exp-inst-hint').textContent = `${n} cuotas de ${fmt(parts[0])}${diff}, una por período de ${first} a ${last}. La primera se descuenta en la fecha de compra y las siguientes el ${CUT_DAY} de cada corte.`;
 }
 
 function showConfirm(exp) {
@@ -583,7 +584,7 @@ function showConfirm(exp) {
   $('confirm-title').textContent = exp.pending ? 'Guardado en este celular' : exp.cuotas ? `Compra en ${exp.cuotas} cuotas registrada` : `Gasto registrado por ${me.displayName}`;
   $('confirm-sub').textContent = `${exp.desc} — ${fmt(exp.amount)} en ${catName(exp.catId)}`
     + (exp.chargeCatId ? `, descontado de ${catName(exp.chargeCatId)}` : '')
-    + (exp.cuotas ? `. Cuota 1 de ${exp.cuotas} (total ${fmt(exp.planTotal)}); la última cae en ${periodLabel(periodOfDate(addMonths(exp.date, exp.cuotas - 1)))}` : '')
+    + (exp.cuotas ? `. Cuota 1 de ${exp.cuotas} (total ${fmt(exp.planTotal)}); la última cae en ${periodLabel(periodOfDate(cuotaDate(exp.date, exp.cuotas - 1)))}` : '')
     + (exp.pending ? '. No hay conexión: se subirá solo cuando vuelva.' : '');
   $('confirm-icon').textContent = exp.pending ? '⏳' : '✓';
   $('confirm-icon').style.background = exp.pending ? '#fef3c7' : '#dcfce7';
