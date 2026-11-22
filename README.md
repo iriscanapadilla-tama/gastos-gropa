@@ -6,7 +6,7 @@ Corre en su propio servidor (`gropa-server`) y se abre con Tailscale. La guía p
 
 ## Qué hace
 
-- **Registrar** (pantalla principal): monto, categoría, descripción y fecha, con lo que queda disponible en cada categoría.
+- **Registrar** (pantalla principal): monto, categoría, descripción y fecha, con lo que queda disponible en cada categoría. Por excepción, un gasto se puede descontar de otra categoría (por ejemplo, un gasto de Ocio que se paga con lo que sobró de Gasolina).
 - **Resumen**: presupuesto, gastado y disponible del período, con avisos al acercarse al límite.
 - **Gastos**: buscar por texto y filtrar por categoría, persona o todos los períodos. Cada uno edita o borra solo lo que registró.
 - **Estadísticas**: en qué se fue el dinero, últimos 6 períodos, comparación con el período anterior, quién registró más y los 5 gastos más grandes.

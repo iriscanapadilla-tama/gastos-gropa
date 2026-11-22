@@ -160,3 +160,7 @@ input:focus,select:focus{border-color:#888}
   .card-value{font-size:17px}
   .stat-bar-row{grid-template-columns:70px 1fr 84px}
 }
+.other-cat{gap:8px}
+.other-cat .check{font-size:13px;color:#444}
+.charge-tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;background:#ede9fe;color:#5b21b6;font-weight:600;margin-left:2px}
+.cat-note{font-size:11px;color:#5b21b6;margin-top:6px}

@@ -110,6 +110,15 @@ function threshold(n) {
   return v;
 }
 
+// Categoría de donde se descuenta el gasto, si es distinta de la suya.
+// Ej.: un gasto de Ocio que, por excepción, se descuenta de Gasolina.
+function chargeCategory(s, b) {
+  const v = b.chargeCatId;
+  if (!v || v === b.catId) return null;
+  if (!s.categories.some((c) => c.id === v)) fail(400, 'La categoría de donde se descuenta no existe.');
+  return v;
+}
+
 function payload() {
   const s = store.get();
   return { categories: s.categories, expenses: s.expenses, users: readConfig().usuarios.map(publicUser) };
@@ -249,7 +258,7 @@ async function api(req, res, url) {
     const b = await readBody(req);
     const exp = {
       id: auth.newId(), desc: cleanText(b.desc, 'la descripción'), amount: positiveAmount(b.amount, 'El monto'),
-      catId: b.catId, date: b.date, userId: me.id, user: me.displayName, ts: Date.now(),
+      catId: b.catId, chargeCatId: chargeCategory(s, b), date: b.date, userId: me.id, user: me.displayName, ts: Date.now(),
     };
     if (!s.categories.some((c) => c.id === exp.catId)) fail(400, 'La categoría no existe.');
     if (!isDate(exp.date)) fail(400, 'La fecha no es válida.');
@@ -269,7 +278,7 @@ async function api(req, res, url) {
     const b = await readBody(req);
     const changes = {
       desc: cleanText(b.desc, 'la descripción'), amount: positiveAmount(b.amount, 'El monto'),
-      catId: b.catId, date: b.date, editedAt: Date.now(),
+      catId: b.catId, chargeCatId: chargeCategory(s, b), date: b.date, editedAt: Date.now(),
     };
     if (!s.categories.some((c) => c.id === changes.catId)) fail(400, 'La categoría no existe.');
     if (!isDate(changes.date)) fail(400, 'La fecha no es válida.');
@@ -297,7 +306,7 @@ async function api(req, res, url) {
     if (method === 'DELETE') {
       // Si nunca tuvo gastos se borra; si tuvo, se oculta desde este período
       // y los meses anteriores la siguen mostrando con sus gastos.
-      const used = s.expenses.some((e) => e.catId === cat.id);
+      const used = s.expenses.some((e) => e.catId === cat.id || e.chargeCatId === cat.id);
       store.mutate((st) => {
         if (used) cat.archivedFrom = b.from;
         else st.categories = st.categories.filter((c) => c.id !== cat.id);

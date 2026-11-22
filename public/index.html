@@ -74,6 +74,10 @@
         <form id="exp-form" class="form-grid">
           <div class="form-group"><label for="exp-amount">Monto (Q)</label><input class="amount-input" type="number" id="exp-amount" placeholder="0.00" min="0" step="0.01" inputmode="decimal" required></div>
           <div class="form-group"><label for="exp-cat">Categoría</label><select id="exp-cat" required></select></div>
+          <div class="form-group full other-cat">
+            <label class="check"><input type="checkbox" id="exp-other"> Descontarlo de otra categoría (por excepción)</label>
+            <select id="exp-charge" class="hidden" aria-label="Categoría de donde se descuenta"></select>
+          </div>
           <div class="form-group full"><label for="exp-desc">Descripción</label><input type="text" id="exp-desc" placeholder="Ej. Supermercado La Torre" maxlength="120" required></div>
           <div class="form-group"><label for="exp-date">Fecha</label><input type="date" id="exp-date" required></div>
           <div class="form-group" style="justify-content:flex-end"><button class="btn btn-block" type="submit" id="exp-submit">Registrar gasto</button></div>
@@ -118,6 +122,7 @@
       </div>
       <div class="form-card">
         <div class="form-title">En qué se fue el dinero</div>
+        <p class="form-hint">Por tipo de gasto, aunque alguno se haya descontado de otra categoría.</p>
         <div class="stat-bars" id="st-dist"></div>
       </div>
       <div class="form-card">
@@ -212,6 +217,10 @@
       <div class="form-group full"><label for="ee-desc">Descripción</label><input type="text" id="ee-desc" maxlength="120" required></div>
       <div class="form-group"><label for="ee-amount">Monto (Q)</label><input type="number" id="ee-amount" min="0" step="0.01" inputmode="decimal" required></div>
       <div class="form-group"><label for="ee-cat">Categoría</label><select id="ee-cat" required></select></div>
+      <div class="form-group full other-cat">
+        <label class="check"><input type="checkbox" id="ee-other"> Descontarlo de otra categoría</label>
+        <select id="ee-charge" class="hidden" aria-label="Categoría de donde se descuenta"></select>
+      </div>
       <div class="form-group full"><label for="ee-date">Fecha</label><input type="date" id="ee-date" required></div>
     </div>
     <div class="modal-actions">

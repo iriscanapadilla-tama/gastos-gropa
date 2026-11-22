@@ -120,13 +120,21 @@ function catsFor(p, exps = expensesIn(p)) {
   return categories.filter((c) => {
     const started = (c.limits || []).some((l) => l.from <= p.key);
     const active = started && (!c.archivedFrom || p.key < c.archivedFrom);
-    return active || exps.some((e) => e.catId === c.id);
+    return active || exps.some((e) => e.catId === c.id || e.chargeCatId === c.id);
   });
 }
 const activeCats = () => categories.filter((c) => !c.archivedFrom);
-const spentIn = (exps, catId) => exps.filter((e) => e.catId === catId).reduce((s, e) => s + e.amount, 0);
+// Categoría de la que se descuenta el gasto (normalmente la suya).
+const chargeOf = (e) => e.chargeCatId || e.catId;
+// Lo que se descuenta del presupuesto de una categoría.
+const spentIn = (exps, catId) => exps.filter((e) => chargeOf(e) === catId).reduce((s, e) => s + e.amount, 0);
+// Lo que realmente se gastó en ese tipo de gasto (para estadísticas).
+const spentReal = (exps, catId) => exps.filter((e) => e.catId === catId).reduce((s, e) => s + e.amount, 0);
 const userName = (e) => users.find((u) => u.id === e.userId)?.displayName || e.user || '—';
 const catName = (id) => categories.find((c) => c.id === id)?.name || '—';
+function catLabel(e) {
+  return e.chargeCatId ? `${esc(catName(e.catId))} <span class="charge-tag">de ${esc(catName(e.chargeCatId))}</span>` : esc(catName(e.catId));
+}
 function catColor(id) { const i = categories.findIndex((c) => c.id === id); return CAT_COLORS[(i < 0 ? 0 : i) % CAT_COLORS.length]; }
 function barClass(pct, thr = 80) { return pct >= 100 ? 'bar-danger' : pct >= thr ? 'bar-warn' : 'bar-ok'; }
 function textClass(pct, thr = 80) { return pct >= 100 ? 'danger' : pct >= thr ? 'warn' : 'ok'; }
@@ -161,11 +169,22 @@ function catOptions(selected) {
   return list.map((c) => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
 }
 
+// Opciones de "descontar de": todas las categorías activas menos la del gasto.
+function fillCharge(selectEl, catId, selected) {
+  const list = activeCats().filter((c) => c.id !== catId);
+  if (selected && selected !== catId && !list.some((c) => c.id === selected)) {
+    const c = categories.find((x) => x.id === selected); if (c) list.push(c);
+  }
+  selectEl.innerHTML = list.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  if (selected && list.some((c) => c.id === selected)) selectEl.value = selected;
+}
+
 function renderRegistrar(p) {
   const sel = $('exp-cat');
   const prev = sel.value;
   sel.innerHTML = catOptions();
   if (prev && activeCats().some((c) => c.id === prev)) sel.value = prev;
+  fillCharge($('exp-charge'), sel.value, $('exp-charge').value);
   if (!$('exp-date').value) $('exp-date').value = todayLocal();
 
   const exps = expensesIn(p);
@@ -191,6 +210,11 @@ function renderResumen(p) {
     totBudget += lim; totSpent += spent;
     const rawPct = lim > 0 ? (spent / lim) * 100 : 0, pct = Math.min(Math.round(rawPct), 100);
     const rem = lim - spent, thr = cat.threshold || 80;
+    const borrowed = exps.filter((e) => e.chargeCatId === cat.id && e.catId !== cat.id);
+    const lent = exps.filter((e) => e.catId === cat.id && e.chargeCatId && e.chargeCatId !== cat.id);
+    const notes = [];
+    if (borrowed.length) notes.push(`Incluye ${fmt(borrowed.reduce((s, e) => s + e.amount, 0))} de otras categorías (${[...new Set(borrowed.map((e) => catName(e.catId)))].map(esc).join(', ')})`);
+    if (lent.length) notes.push(`Además, ${fmt(lent.reduce((s, e) => s + e.amount, 0))} de ${esc(cat.name)} se descontó de ${[...new Set(lent.map((e) => catName(e.chargeCatId)))].map(esc).join(', ')}`);
     const row = document.createElement('div');
     row.className = 'cat-row';
     row.innerHTML = `
@@ -205,7 +229,7 @@ function renderResumen(p) {
       <div class="cat-footer">
         <span class="cat-pct">${pct}% usado</span>
         <span class="cat-rem ${textClass(rawPct, thr)}">${rem >= 0 ? 'Disponible: ' + fmt(rem) : 'Excedido: ' + fmt(Math.abs(rem))}</span>
-      </div>`;
+      </div>${notes.map((n) => `<div class="cat-note">${n}</div>`).join('')}`;
     list.appendChild(row);
   }
   const avail = totBudget - totSpent;
@@ -226,7 +250,7 @@ function renderGastos(p) {
   const q = norm($('f-text').value.trim());
   let exps = all ? expenses.slice() : expensesIn(p);
   if (q) exps = exps.filter((e) => norm(e.desc).includes(q));
-  if (fc.value) exps = exps.filter((e) => e.catId === fc.value);
+  if (fc.value) exps = exps.filter((e) => e.catId === fc.value || e.chargeCatId === fc.value);
   if (fu.value) exps = exps.filter((e) => e.userId === fu.value);
   exps.sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0));
 
@@ -242,7 +266,7 @@ function renderGastos(p) {
     <div class="exp-item">
       <div class="exp-left">
         <span class="exp-name">${esc(e.desc)}</span>
-        <span class="exp-meta">${esc(catName(e.catId))} · ${fmtDate(e.date)} · ${esc(userName(e))}${e.editedAt ? ' · editado' : ''}</span>
+        <span class="exp-meta">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}${e.editedAt ? ' · editado' : ''}</span>
       </div>
       <div class="exp-right">
         <span class="exp-amount">${fmt(e.amount)}</span>
@@ -294,7 +318,7 @@ function renderStats(p) {
   $('st-avg').textContent = fmt(exps.length ? total / exps.length : 0);
 
   // En qué se fue el dinero
-  const cats = catsFor(p, exps).map((c) => ({ c, spent: spentIn(exps, c.id) })).sort((a, b) => b.spent - a.spent);
+  const cats = catsFor(p, exps).map((c) => ({ c, spent: spentReal(exps, c.id) })).filter((x) => x.spent > 0 || catsFor(p, []).includes(x.c)).sort((a, b) => b.spent - a.spent);
   $('st-dist').innerHTML = total
     ? cats.map(({ c, spent }) => {
       const share = (spent / total) * 100;
@@ -326,7 +350,7 @@ function renderStats(p) {
   $('st-compare').innerHTML = both.length
     ? `<div class="compare-row" style="font-size:11px;color:#888"><span>Categoría</span><span>${esc(MS[prev.startMonth])} → ${esc(MS[p.startMonth])}</span><span style="text-align:right">Cambio</span></div>`
       + both.map((c) => {
-        const a = spentIn(prevExps, c.id), b = spentIn(exps, c.id);
+        const a = spentReal(prevExps, c.id), b = spentReal(exps, c.id);
         return `<div class="compare-row"><span>${esc(c.name)}</span><span style="color:#666">${fmtShort(a)} → <b style="color:#1a1a1a">${fmtShort(b)}</b></span>${deltaHtml(pctChange(b, a))}</div>`;
       }).join('')
     : '<div class="empty">Sin datos para comparar.</div>';
@@ -349,7 +373,7 @@ function renderStats(p) {
   // Los 5 gastos más grandes
   const top = exps.slice().sort((a, b) => b.amount - a.amount).slice(0, 5);
   $('st-top').innerHTML = top.length
-    ? top.map((e, i) => `<div class="top-item"><span><span class="top-rank">${i + 1}</span>${esc(e.desc)}<br><span class="exp-meta" style="margin-left:18px">${esc(catName(e.catId))} · ${fmtDate(e.date)} · ${esc(userName(e))}</span></span><b>${fmt(e.amount)}</b></div>`).join('')
+    ? top.map((e, i) => `<div class="top-item"><span><span class="top-rank">${i + 1}</span>${esc(e.desc)}<br><span class="exp-meta" style="margin-left:18px">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}</span></span><b>${fmt(e.amount)}</b></div>`).join('')
     : '<div class="empty">Sin gastos en este período.</div>';
 }
 
@@ -360,12 +384,15 @@ async function addExpense(ev) {
   const body = {
     desc: $('exp-desc').value.trim(), amount: parseFloat($('exp-amount').value),
     catId: $('exp-cat').value, date: $('exp-date').value,
+    chargeCatId: $('exp-other').checked ? $('exp-charge').value : null,
   };
+  if ($('exp-other').checked && !body.chargeCatId) { alert('Elige de qué categoría se descuenta.'); return; }
   if (!body.desc || !(body.amount > 0) || !body.catId || !body.date) { alert('Completa monto, categoría, descripción y fecha.'); return; }
   $('exp-submit').disabled = true;
   try {
     const d = await mutate('/api/gastos', { method: 'POST', body });
     $('exp-desc').value = ''; $('exp-amount').value = '';
+    $('exp-other').checked = false; $('exp-charge').classList.add('hidden');
     showConfirm(d.created);
   } catch {} finally { $('exp-submit').disabled = false; }
 }
@@ -374,13 +401,14 @@ function showConfirm(exp) {
   const p = periodOfDate(exp.date);
   const exps = expensesIn(p);
   $('confirm-title').textContent = `Gasto registrado por ${me.displayName}`;
-  $('confirm-sub').textContent = `${exp.desc} — ${fmt(exp.amount)} en ${catName(exp.catId)}`;
+  $('confirm-sub').textContent = `${exp.desc} — ${fmt(exp.amount)} en ${catName(exp.catId)}`
+    + (exp.chargeCatId ? `, descontado de ${catName(exp.chargeCatId)}` : '');
   let totalBudget = 0, totalSpent = 0;
   $('confirm-cats').innerHTML = catsFor(p, exps).map((c) => {
     const spent = spentIn(exps, c.id), lim = limitFor(c, p.key);
     totalBudget += lim; totalSpent += spent;
     const rawPct = lim > 0 ? (spent / lim) * 100 : 0, pct = Math.min(Math.round(rawPct), 100);
-    const rem = lim - spent, thr = c.threshold || 80, isThis = c.id === exp.catId;
+    const rem = lim - spent, thr = c.threshold || 80, isThis = c.id === chargeOf(exp);
     let barColor = '#639922', hl = '';
     if (rawPct >= 100) { barColor = '#E24B4A'; hl = 'background:#FEF5F5;border:0.5px solid #F7C1C1;'; }
     else if (rawPct >= thr) { barColor = '#EF9F27'; hl = 'background:#FEFAF0;border:0.5px solid #FAC775;'; }
@@ -390,7 +418,7 @@ function showConfirm(exp) {
       : `<span style="color:${rawPct >= thr ? '#854F0B' : '#3B6D11'};font-weight:${rawPct >= thr ? 500 : 400}">Quedan ${fmt(rem)}</span>`;
     return `<div style="padding:8px 10px;border-radius:8px;${hl}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:13px;font-weight:500">${esc(c.name)}${isThis ? ' <span style="font-size:10px;font-weight:400;color:#888">(este gasto)</span>' : ''}</span>
+        <span style="font-size:13px;font-weight:500">${esc(c.name)}${isThis ? ` <span style="font-size:10px;font-weight:400;color:#888">(${exp.chargeCatId ? 'se descontó aquí' : 'este gasto'})</span>` : ''}</span>
         <span style="font-size:12px;font-weight:500">${pct}% usado</span>
       </div>
       <div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:4px"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div></div>
@@ -407,12 +435,19 @@ function openEditExpense(id) {
   editingExpId = id;
   $('ee-desc').value = e.desc; $('ee-amount').value = e.amount;
   $('ee-cat').innerHTML = catOptions(e.catId); $('ee-date').value = e.date;
+  $('ee-other').checked = !!e.chargeCatId;
+  fillCharge($('ee-charge'), e.catId, e.chargeCatId);
+  $('ee-charge').classList.toggle('hidden', !e.chargeCatId);
   $('edit-exp-overlay').classList.add('open');
 }
 
 async function saveEditExpense(ev) {
   ev.preventDefault();
-  const body = { desc: $('ee-desc').value.trim(), amount: parseFloat($('ee-amount').value), catId: $('ee-cat').value, date: $('ee-date').value };
+  const body = {
+    desc: $('ee-desc').value.trim(), amount: parseFloat($('ee-amount').value), catId: $('ee-cat').value, date: $('ee-date').value,
+    chargeCatId: $('ee-other').checked ? $('ee-charge').value : null,
+  };
+  if ($('ee-other').checked && !body.chargeCatId) { alert('Elige de qué categoría se descuenta.'); return; }
   try {
     await mutate(`/api/gastos/${encodeURIComponent(editingExpId)}`, { method: 'PUT', body });
     closeOverlays();
@@ -455,7 +490,7 @@ async function saveEditCategory(ev) {
 async function deleteCategory(id) {
   const c = categories.find((x) => x.id === id); if (!c) return;
   const p = getPeriod(periodOffset);
-  const used = expenses.some((e) => e.catId === id);
+  const used = expenses.some((e) => e.catId === id || e.chargeCatId === id);
   const text = used
     ? `¿Quitar "${c.name}" desde ${periodLabel(p)}?\n\nLos períodos anteriores la siguen mostrando con sus gastos.`
     : `¿Eliminar "${c.name}"? No tiene gastos registrados.`;
@@ -495,8 +530,8 @@ function exportGlobal() {
   }
   rs.push(['TOTAL', tl, +ts.toFixed(2), +(tl - ts).toFixed(2), tl ? +(ts / tl * 100).toFixed(1) + '%' : '—', '']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rs), 'Resumen');
-  const dt = [['Fecha', 'Descripción', 'Categoría', 'Monto (Q)', 'Registrado por']];
-  exps.forEach((e) => dt.push([e.date, e.desc, catName(e.catId), e.amount, userName(e)]));
+  const dt = [['Fecha', 'Descripción', 'Categoría', 'Descontado de', 'Monto (Q)', 'Registrado por']];
+  exps.forEach((e) => dt.push([e.date, e.desc, catName(e.catId), catName(chargeOf(e)), e.amount, userName(e)]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dt), 'Detalle gastos');
   XLSX.writeFile(wb, `Gastos_${periodLabel(p).replace(' ', '_')}_Global.xlsx`);
 }
@@ -513,11 +548,11 @@ function exportPorCategoria() {
   }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rs), 'Resumen');
   for (const c of cats) {
-    const ce = exps.filter((e) => e.catId === c.id).sort((a, b) => a.date.localeCompare(b.date));
+    const ce = exps.filter((e) => chargeOf(e) === c.id).sort((a, b) => a.date.localeCompare(b.date));
     const lim = limitFor(c, p.key), sp = spentIn(exps, c.id);
-    const data = [[`Categoría: ${c.name}`, `Período: ${periodDates(p)}`], [`Límite: Q${lim}`, `Gastado: Q${sp.toFixed(2)}`, `Disponible: Q${(lim - sp).toFixed(2)}`], [], ['Fecha', 'Descripción', 'Monto (Q)', 'Registrado por']];
-    ce.forEach((e) => data.push([e.date, e.desc, e.amount, userName(e)]));
-    data.push([], ['', 'TOTAL', +sp.toFixed(2), '']);
+    const data = [[`Categoría: ${c.name}`, `Período: ${periodDates(p)}`], [`Límite: Q${lim}`, `Gastado: Q${sp.toFixed(2)}`, `Disponible: Q${(lim - sp).toFixed(2)}`], [], ['Fecha', 'Descripción', 'Monto (Q)', 'Registrado por', 'Nota']];
+    ce.forEach((e) => data.push([e.date, e.desc, e.amount, userName(e), e.catId !== c.id ? `Gasto de ${catName(e.catId)} descontado aquí` : '']));
+    data.push([], ['', 'TOTAL', +sp.toFixed(2), '', '']);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), sheetName(c.name));
   }
   XLSX.writeFile(wb, `Gastos_${periodLabel(p).replace(' ', '_')}_PorCategoria.xlsx`);
@@ -622,6 +657,11 @@ function bindEvents() {
   $('btn-hoy').addEventListener('click', () => { periodOffset = 0; renderAll(); });
   $('tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) showTab(t.dataset.tab); });
   $('exp-form').addEventListener('submit', addExpense);
+  // "Descontar de otra categoría": mostrar u ocultar la lista y no ofrecer la misma categoría.
+  for (const [chk, cat, chg] of [['exp-other', 'exp-cat', 'exp-charge'], ['ee-other', 'ee-cat', 'ee-charge']]) {
+    $(chk).addEventListener('change', () => { fillCharge($(chg), $(cat).value, $(chg).value); $(chg).classList.toggle('hidden', !$(chk).checked); });
+    $(cat).addEventListener('change', () => fillCharge($(chg), $(cat).value, $(chg).value));
+  }
   $('cat-form').addEventListener('submit', addCategory);
   $('edit-exp-form').addEventListener('submit', saveEditExpense);
   $('edit-cat-form').addEventListener('submit', saveEditCategory);
