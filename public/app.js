@@ -459,8 +459,7 @@ function renderInicio(p) {
   const pct = budget > 0 ? (spent / budget) * 100 : (spent > 0 ? 100 : 0);
   const days = periodDays(p), day = dayOfPeriod(p);
   const ideal = (day / days) * 100;
-  $('hero-ideal').style.left = `calc(${ideal.toFixed(2)}% - 1px)`;
-  $('hero-beetle').style.left = `calc(${Math.min(pct, 100).toFixed(2)}% - 9px)`;
+  $('hero-beetle').style.left = `calc(${Math.min(pct, 100).toFixed(2)}% - 11px)`; // centrado sobre el punto del gasto
   $('hero-pct').textContent = `${Math.round(pct)}% usado`;
   $('hero-ideal-txt').textContent = `ritmo ideal ${Math.round(ideal)}%`;
   const left = days - day + 1; // días que quedan, contando hoy
