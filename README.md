@@ -8,6 +8,7 @@ Corre en su propio servidor (`gropa-server`) y se abre con Tailscale. La guía p
 
 - **Registrar** (pantalla principal): monto, categoría, descripción y fecha, con lo que queda disponible en cada categoría. Por excepción, un gasto se puede descontar de otra categoría (por ejemplo, un gasto de Ocio que se paga con lo que sobró de Gasolina).
 - **Resumen**: presupuesto, gastado y disponible del período, con avisos al acercarse al límite.
+- **Compras en cuotas**: se registra el monto total y el número de cuotas (2 a 48). La app crea una cuota por período desde la fecha de compra (la última ajusta los centavos) y el Resumen muestra las compras activas con lo que falta; al pasar la última cuota, la compra deja de aparecer. Borrar una cuota borra la compra completa; editar la descripción o la categoría cambia todas las cuotas.
 - **Gastos**: buscar por texto y filtrar por categoría, persona o todos los períodos. Cada uno edita o borra solo lo que registró.
 - **Estadísticas**: en qué se fue el dinero, últimos 6 períodos, comparación con el período anterior, quién registró más y los 5 gastos más grandes.
 - **Categorías**: crear, editar y quitar. Un límite nuevo aplica desde el período elegido; los anteriores conservan el suyo.
