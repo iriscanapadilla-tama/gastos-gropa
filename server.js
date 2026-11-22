@@ -256,9 +256,15 @@ async function api(req, res, url) {
   // Gastos
   if (method === 'POST' && p === '/api/gastos') {
     const b = await readBody(req);
+    // Un gasto guardado sin conexión puede llegar dos veces si la señal se
+    // corta justo al subirlo; el identificador del celular evita duplicarlo.
+    const clientId = typeof b.clientId === 'string' && /^[\w-]{8,64}$/.test(b.clientId) ? b.clientId : null;
+    const dup = clientId && s.expenses.find((e) => e.clientId === clientId && e.userId === me.id);
+    if (dup) return send(res, 200, { ...payload(), created: dup });
     const exp = {
       id: auth.newId(), desc: cleanText(b.desc, 'la descripción'), amount: positiveAmount(b.amount, 'El monto'),
       catId: b.catId, chargeCatId: chargeCategory(s, b), date: b.date, userId: me.id, user: me.displayName, ts: Date.now(),
+      ...(clientId ? { clientId } : {}),
     };
     if (!s.categories.some((c) => c.id === exp.catId)) fail(400, 'La categoría no existe.');
     if (!isDate(exp.date)) fail(400, 'La fecha no es válida.');

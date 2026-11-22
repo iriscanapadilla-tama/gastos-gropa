@@ -46,6 +46,8 @@
       <span class="user-pill" id="user-pill" title="Cerrar sesión"><span id="user-label"></span> · Salir</span>
     </header>
 
+    <div class="offline-banner hidden" id="offline-banner" role="status"></div>
+
     <div class="period-bar">
       <div class="period-nav">
         <button class="btn-nav" data-period="-1" aria-label="Período anterior">‹</button>
@@ -195,7 +197,7 @@
 <div class="overlay" id="confirm-overlay">
   <div class="modal">
     <div class="confirm-header">
-      <div class="confirm-icon">✓</div>
+      <div class="confirm-icon" id="confirm-icon">✓</div>
       <div>
         <div class="confirm-title" id="confirm-title">Gasto registrado</div>
         <div class="confirm-sub" id="confirm-sub">—</div>

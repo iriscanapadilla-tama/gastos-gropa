@@ -12,7 +12,12 @@ const USER_COLORS = ['#db2777','#2563eb','#16a34a','#9333ea'];
 let me = null;
 let users = [];
 let categories = [];
-let expenses = [];
+let expenses = [];        // los del servidor + los pendientes de este celular
+let serverExpenses = [];
+const LS_COPIA = 'gastos.copia';
+const LS_PENDIENTES = 'gastos.pendientes';
+const OFFLINE_MSG = 'Sin conexión: los gastos nuevos se guardan en el celular';
+let pending = [];
 let periodOffset = 0;
 let editingExpId = null;
 let editingCatId = null;
@@ -41,37 +46,119 @@ function toast(text) {
 
 async function api(path, { method = 'GET', body } = {}) {
   let r;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
     r = await fetch(path, {
-      method, credentials: 'same-origin',
+      method, credentials: 'same-origin', signal: ctrl.signal,
       headers: body ? { 'Content-Type': 'application/json' } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error('No hay conexión con el servidor. Revisa que Tailscale esté activo.');
-  }
+    const err = new Error('No hay conexión con el servidor. Revisa que Tailscale esté activo.');
+    err.offline = true;
+    throw err;
+  } finally { clearTimeout(timer); }
   let data = {};
   try { data = await r.json(); } catch {}
   if (r.status === 401 && path !== '/api/entrar') { me = null; showLogin(); }
-  if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+  if (!r.ok) { const err = new Error(data.error || `Error ${r.status}`); err.status = r.status; throw err; }
   return data;
+}
+
+// ── Sin conexión ───────────────────────────────────────────────────────
+// La última copia de los datos y los gastos pendientes se guardan en este
+// celular. Los pendientes se suben solos cuando vuelve la conexión.
+
+function lsGet(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+function lsSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+function newClientId() {
+  try { return crypto.randomUUID(); } catch { return Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+}
+const myPending = () => (me ? pending.filter((p) => p.userId === me.id) : []);
+function savePending() { lsSet(LS_PENDIENTES, pending); }
+function mergePending() {
+  expenses = serverExpenses.concat(myPending().map((p) => ({
+    ...p.body, id: 'pendiente-' + p.clientId, clientId: p.clientId, userId: me.id, user: me.displayName,
+    ts: p.createdAt, pending: true, error: p.error || null,
+  })));
+}
+function pendingNote() {
+  const n = myPending().length;
+  return n ? ` · ${n} ${n === 1 ? 'pendiente' : 'pendientes'} de subir` : '';
+}
+
+let syncing = false;
+async function syncPending() {
+  if (syncing || !me) return;
+  const queue = myPending().filter((p) => !p.error);
+  if (!queue.length) return;
+  syncing = true;
+  let uploaded = 0;
+  try {
+    for (const p of queue) {
+      try {
+        const d = await api('/api/gastos', { method: 'POST', body: { ...p.body, clientId: p.clientId } });
+        pending = pending.filter((x) => x.clientId !== p.clientId);
+        savePending();
+        applyData(d);
+        uploaded++;
+      } catch (e) {
+        if (e.offline || e.status === 401) break;
+        p.error = e.message;
+        savePending(); mergePending(); renderAll();
+      }
+    }
+  } finally { syncing = false; }
+  if (uploaded) { setSyncStatus('ok'); toast(`Se ${uploaded === 1 ? 'subió 1 gasto pendiente' : `subieron ${uploaded} gastos pendientes`}`); }
+}
+
+function removePending(clientId) {
+  const p = pending.find((x) => x.clientId === clientId); if (!p) return;
+  if (!confirm(`¿Quitar "${p.body.desc}" por ${fmt(p.body.amount)}? Todavía no se subió al servidor.`)) return;
+  pending = pending.filter((x) => x.clientId !== clientId);
+  savePending(); mergePending(); renderAll();
 }
 
 function setSyncStatus(state, detail) {
   const c = { ok: 'sync-ok', loading: 'sync-loading', error: 'sync-error' };
-  const l = { ok: 'Sincronizado', loading: 'Sincronizando...', error: detail || 'Sin conexión con el servidor' };
+  const l = { ok: 'Sincronizado' + pendingNote(), loading: 'Sincronizando...', error: (detail === OFFLINE_MSG ? 'Sin conexión' : detail || 'Sin conexión con el servidor') + pendingNote() };
   $('sync-status').innerHTML = `<span class="sync-dot ${c[state]}"></span>${esc(l[state])}`;
+  if (state === 'ok') showOfflineBanner(false);
+  if (state === 'error' && detail === OFFLINE_MSG) showOfflineBanner(true);
+}
+
+// Franja que avisa que se está viendo la última copia guardada en el celular.
+function showOfflineBanner(on) {
+  const b = $('offline-banner');
+  if (!on) { b.classList.add('hidden'); return; }
+  const copia = lsGet(LS_COPIA, null);
+  let when = '';
+  if (copia?.savedAt) {
+    const d = new Date(copia.savedAt);
+    when = ` del ${d.getDate()} ${MS[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  b.innerHTML = `<b>Sin conexión.</b> Estás viendo la última copia guardada${esc(when)}; puede no estar al día. Los gastos nuevos se guardan en este celular y se suben solos al volver la conexión.`;
+  b.classList.remove('hidden');
 }
 
 function applyData(d) {
-  if (d && d.categories) { categories = d.categories; expenses = d.expenses; users = d.users || []; }
+  if (d && d.categories) {
+    categories = d.categories; serverExpenses = d.expenses; users = d.users || [];
+    if (me) lsSet(LS_COPIA, { user: me, data: { categories, expenses: serverExpenses, users }, savedAt: Date.now() });
+  }
+  if (me) mergePending();
   renderAll();
 }
 
 async function loadData() {
   setSyncStatus('loading');
-  try { applyData(await api('/api/datos')); setSyncStatus('ok'); }
-  catch (e) { setSyncStatus('error', e.message); }
+  try { applyData(await api('/api/datos')); setSyncStatus('ok'); syncPending(); }
+  catch (e) { setSyncStatus('error', e.offline ? OFFLINE_MSG : e.message); }
 }
 
 async function mutate(path, opts) {
@@ -82,8 +169,8 @@ async function mutate(path, opts) {
     setSyncStatus('ok');
     return d;
   } catch (e) {
-    setSyncStatus('error', e.message);
-    alert(e.message);
+    setSyncStatus('error', e.offline ? OFFLINE_MSG : e.message);
+    alert(e.offline ? 'No hay conexión. Para editar, borrar o cambiar categorías necesitas estar conectado. Los gastos nuevos sí se guardan en el celular.' : e.message);
     throw e;
   }
 }
@@ -269,10 +356,11 @@ function renderGastos(p) {
       <div class="exp-left">
         <span class="exp-name">${esc(e.desc)}</span>
         <span class="exp-meta">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}${e.editedAt ? ' · editado' : ''}</span>
+        ${e.pending ? (e.error ? `<span class="pend-tag pend-error">No se pudo subir: ${esc(e.error)}</span>` : '<span class="pend-tag">Pendiente de subir</span>') : ''}
       </div>
       <div class="exp-right">
         <span class="exp-amount">${fmt(e.amount)}</span>
-        ${e.userId === me.id ? `<button class="btn-small" data-edit-exp="${esc(e.id)}" aria-label="Editar">✎</button><button class="btn-del" data-del-exp="${esc(e.id)}" aria-label="Eliminar">✕</button>` : ''}
+        ${e.pending ? `<button class="btn-del" data-del-pend="${esc(e.clientId)}" aria-label="Quitar">✕</button>` : e.userId === me.id ? `<button class="btn-small" data-edit-exp="${esc(e.id)}" aria-label="Editar">✎</button><button class="btn-del" data-del-exp="${esc(e.id)}" aria-label="Eliminar">✕</button>` : ''}
       </div>
     </div>`).join('') + (exps.length > shown.length ? `<div class="empty">Se muestran los 300 más recientes. Usa los filtros para encontrar otros.</div>` : '');
 }
@@ -390,21 +478,44 @@ async function addExpense(ev) {
   };
   if ($('exp-other').checked && !body.chargeCatId) { alert('Elige de qué categoría se descuenta.'); return; }
   if (!body.desc || !(body.amount > 0) || !body.catId || !body.date) { alert('Completa monto, categoría, descripción y fecha.'); return; }
+  body.clientId = newClientId();
   $('exp-submit').disabled = true;
-  try {
-    const d = await mutate('/api/gastos', { method: 'POST', body });
+  const clearForm = () => {
     $('exp-desc').value = ''; $('exp-amount').value = '';
     $('exp-other').checked = false; $('exp-charge').classList.add('hidden');
-    showConfirm(d.created);
-  } catch {} finally { $('exp-submit').disabled = false; }
+  };
+  try {
+    setSyncStatus('loading');
+    const d = await api('/api/gastos', { method: 'POST', body });
+    applyData(d); setSyncStatus('ok');
+    clearForm(); showConfirm(d.created);
+    syncPending();
+  } catch (e) {
+    if (e.offline || e.status === 401) {
+      // Sin conexión (o sesión vencida): se guarda en el celular y se sube después.
+      const { clientId, ...rest } = body;
+      pending.push({ clientId, body: rest, userId: (me || estado?.user || {}).id, createdAt: Date.now() });
+      savePending();
+      if (me) {
+        mergePending(); renderAll();
+        setSyncStatus('error', OFFLINE_MSG);
+        clearForm(); showConfirm(expenses.find((x) => x.clientId === clientId));
+      }
+    } else {
+      setSyncStatus('error', e.message); alert(e.message);
+    }
+  } finally { $('exp-submit').disabled = false; }
 }
 
 function showConfirm(exp) {
   const p = periodOfDate(exp.date);
   const exps = expensesIn(p);
-  $('confirm-title').textContent = `Gasto registrado por ${me.displayName}`;
+  $('confirm-title').textContent = exp.pending ? 'Guardado en este celular' : `Gasto registrado por ${me.displayName}`;
   $('confirm-sub').textContent = `${exp.desc} — ${fmt(exp.amount)} en ${catName(exp.catId)}`
-    + (exp.chargeCatId ? `, descontado de ${catName(exp.chargeCatId)}` : '');
+    + (exp.chargeCatId ? `, descontado de ${catName(exp.chargeCatId)}` : '')
+    + (exp.pending ? '. No hay conexión: se subirá solo cuando vuelva.' : '');
+  $('confirm-icon').textContent = exp.pending ? '⏳' : '✓';
+  $('confirm-icon').style.background = exp.pending ? '#fef3c7' : '#dcfce7';
   let totalBudget = 0, totalSpent = 0;
   $('confirm-cats').innerHTML = catsFor(p, exps).map((c) => {
     const spent = spentIn(exps, c.id), lim = limitFor(c, p.key);
@@ -600,12 +711,17 @@ function showLogin() {
   if (blocked) { $('login-reset').classList.add('hidden'); loginMessage(blocked); }
 }
 
-function showApp() {
+function showApp(offlineCopy) {
   $('login-screen').classList.add('hidden');
   $('main-app').classList.remove('hidden');
   $('user-label').textContent = me.displayName;
   $('exp-date').value = todayLocal();
-  loadData();
+  if (offlineCopy) {
+    applyData(offlineCopy.data);
+    setSyncStatus('error', OFFLINE_MSG);
+  } else {
+    loadData();
+  }
 }
 
 async function doLogin(ev) {
@@ -644,8 +760,15 @@ async function resetPassword() {
 }
 
 async function doLogout() {
-  if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
+  const n = myPending().length;
+  const text = n
+    ? `Hay ${n} ${n === 1 ? 'gasto que todavía no se ha subido' : 'gastos que todavía no se han subido'} desde este celular. Si cierras sesión, se borran.\n\n¿Cerrar sesión de todas formas?`
+    : '¿Cerrar sesión en este dispositivo?';
+  if (!confirm(text)) return;
   try { await api('/api/salir', { method: 'POST' }); } catch {}
+  pending = pending.filter((p) => p.userId !== me.id);
+  savePending();
+  try { localStorage.removeItem(LS_COPIA); } catch {}
   me = null; showLogin();
 }
 
@@ -675,6 +798,7 @@ function bindEvents() {
   $('expense-list').addEventListener('click', (e) => {
     const ed = e.target.closest('[data-edit-exp]'); if (ed) return openEditExpense(ed.dataset.editExp);
     const dl = e.target.closest('[data-del-exp]'); if (dl) return deleteExpense(dl.dataset.delExp);
+    const dp = e.target.closest('[data-del-pend]'); if (dp) return removePending(dp.dataset.delPend);
   });
   $('cat-config-list').addEventListener('click', (e) => {
     const ed = e.target.closest('[data-edit-cat]'); if (ed) return openEditCategory(ed.dataset.editCat);
@@ -687,15 +811,23 @@ function bindEvents() {
 
   // Mantener los datos al día entre los dos.
   setInterval(() => { if (me && document.visibilityState === 'visible') loadData(); }, 30000);
+  window.addEventListener('online', () => { if (me) loadData(); });
   document.addEventListener('visibilitychange', () => { if (me && document.visibilityState === 'visible') loadData(); });
 }
 
 async function start() {
   bindEvents();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  pending = lsGet(LS_PENDIENTES, []);
   try {
     estado = await api('/api/estado');
   } catch (e) {
+    // Sin conexión: si este celular ya tenía la sesión abierta, se abre con la última copia.
+    const copia = lsGet(LS_COPIA, null);
+    if (e.offline && copia?.user) {
+      estado = { user: copia.user };
+      me = copia.user; showApp(copia); return;
+    }
     estado = { problema: e.message };
   }
   if (estado.user) { me = estado.user; showApp(); }
