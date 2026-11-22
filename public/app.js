@@ -6,8 +6,6 @@ const CUT_DAY = 22; // El período va del 22 de un mes al 21 del siguiente.
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.12.0';
 const MF = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-const CAT_COLORS = ['#2563eb','#d97706','#16a34a','#9333ea','#db2777','#0891b2','#65a30d','#dc2626','#4b5563'];
-const USER_COLORS = ['#db2777','#2563eb','#16a34a','#9333ea'];
 
 let me = null;
 let users = [];
@@ -36,13 +34,6 @@ const pad = (n) => String(n).padStart(2, '0');
 function todayLocal() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function fmtDate(ds) { const [y, m, d] = ds.split('-').map(Number); return `${d} ${MS[m - 1]} ${y}`; }
 function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
-
-function toast(text) {
-  const t = document.createElement('div');
-  t.className = 'toast'; t.textContent = text;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3500);
-}
 
 async function api(path, { method = 'GET', body } = {}) {
   let r;
@@ -136,8 +127,11 @@ function setSyncStatus(state, detail) {
   const c = { ok: 'sync-ok', loading: 'sync-loading', error: 'sync-error' };
   const l = { ok: 'Sincronizado' + pendingNote(), loading: 'Sincronizando...', error: (detail === OFFLINE_MSG ? 'Sin conexión' : detail || 'Sin conexión con el servidor') + pendingNote() };
   $('sync-status').innerHTML = `<span class="sync-dot ${c[state]}"></span>${esc(l[state])}`;
+  if (state === 'ok') { lastSyncAt = Date.now(); syncFailed = false; }
+  if (state === 'error') syncFailed = true;
   if (state === 'ok') showOfflineBanner(false);
   if (state === 'error' && detail === OFFLINE_MSG) showOfflineBanner(true);
+  if (me) renderSyncCard();
 }
 
 // Franja que avisa que se está viendo la última copia guardada en el celular.
@@ -209,7 +203,6 @@ function splitCuotas(total, n) {
   const per = Math.floor((total / n) * 100) / 100;
   return Array.from({ length: n }, (_, k) => (k < n - 1 ? per : Math.round((total - per * (n - 1)) * 100) / 100));
 }
-const cuotaTag = (e) => (e.cuotas ? ` <span class="cuota-tag">Cuota ${e.cuota}/${e.cuotas}</span>` : '');
 
 function getPeriod(offset) {
   const base = periodOfDate(todayLocal());
@@ -245,30 +238,662 @@ const catName = (id) => categories.find((c) => c.id === id)?.name || '—';
 function catLabel(e) {
   return e.chargeCatId ? `${esc(catName(e.catId))} <span class="charge-tag">de ${esc(catName(e.chargeCatId))}</span>` : esc(catName(e.catId));
 }
-function catColor(id) { const i = categories.findIndex((c) => c.id === id); return CAT_COLORS[(i < 0 ? 0 : i) % CAT_COLORS.length]; }
-function barClass(pct, thr = 80) { return pct >= 100 ? 'bar-danger' : pct >= thr ? 'bar-warn' : 'bar-ok'; }
-function textClass(pct, thr = 80) { return pct >= 100 ? 'danger' : pct >= thr ? 'warn' : 'ok'; }
 
 function changePeriod(dir) { periodOffset += dir; renderAll(); }
 
-// ── Pantallas ──────────────────────────────────────────────────────────
+// ── Íconos (SVG en línea) ──────────────────────────────────────────────
 
-function showTab(name) {
-  document.querySelectorAll('.section').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
-  renderAll();
-  if (name === 'nuevo' && window.matchMedia('(min-width: 700px)').matches) $('exp-amount').focus();
+const ICONS = {
+  iris: '<path d="M12 3c-2 3-2 6 0 8 2-2 2-5 0-8z"/><path d="M12 11c-3-1-6 0-7 3 3 1 5 0 7-3z"/><path d="M12 11c3-1 6 0 7 3-3 1-5 0-7-3z"/><path d="M12 11v10"/><path d="M12 17c2-1 4-1 5-3"/>',
+  escarabajo: '<ellipse cx="12" cy="14" rx="5" ry="6"/><circle cx="12" cy="6.5" r="2"/><path d="M12 9v11M7 12l-3-1M7 15H4M7 18l-3 1M17 12l3-1M17 15h3M17 18l3 1M11 5L9 3M13 5l2-2"/>',
+  huella: '<circle cx="8" cy="6.5" r="1.7"/><circle cx="16" cy="6.5" r="1.7"/><circle cx="4.8" cy="11.5" r="1.7"/><circle cx="19.2" cy="11.5" r="1.7"/><path d="M12 11.5c-3 0-5 3-5 5.2 0 1.8 2 2.6 5 1.8 3 .8 5 0 5-1.8 0-2.2-2-5.2-5-5.2z"/>',
+  gota: '<path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"/>',
+  canasta: '<path d="M3 10h18l-2 9H5z"/><path d="M8 10l3-6M16 10l-3-6"/>',
+  inicio: '<path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/>',
+  movimientos: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+  estadisticas: '<path d="M5 20V11M11 20V5M17 20v-7M3 20h18"/>',
+  mas: '<circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none"/>',
+  agregar: '<path d="M12 5v14M5 12h14"/>',
+  chevron_izq: '<path d="M15 6l-6 6 6 6"/>',
+  chevron_der: '<path d="M9 6l6 6-6 6"/>',
+  buscar: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  calendario: '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  exportar: '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/>',
+  importar: '<path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19h14"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  salir: '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/>',
+};
+
+function svg(name, size = 24, sw = 1.7) {
+  return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICONS[name] || ''}</svg>`;
 }
+// Pone el ícono en cada elemento con data-icon="nombre".
+function hydrateIcons(root = document) {
+  root.querySelectorAll('[data-icon]:not([data-done])').forEach((el) => {
+    el.innerHTML = svg(el.dataset.icon, Number(el.dataset.size) || 24, Number(el.dataset.sw) || 1.7);
+    el.dataset.done = '1';
+  });
+}
+
+// ── Colores e íconos por categoría ─────────────────────────────────────
+// Cada categoría conserva su color en todas las pantallas. Las que no están
+// en esta lista toman el siguiente color de NEW_CAT_PALETTE, en orden de creación.
+
+const CAT_THEMES = {
+  ocio: { icono: 'iris', color: '#6E5BA8', hero: '#9C8BD6', tint: '#ECE8F5', ink: '#5B4B8A' },
+  perro: { icono: 'huella', color: '#C46B7E', hero: '#E39AAB', tint: '#F6E6EA', ink: '#A44A62' },
+  combustible: { icono: 'gota', color: '#2F6B5E', hero: '#6FB8A4', tint: '#E3EFEA', ink: '#2F6B5E' },
+  super: { icono: 'canasta', color: '#D9A033', hero: '#F0C35A', tint: '#F7EDD6', ink: '#8A5A00' },
+};
+const NEW_CAT_PALETTE = [
+  { color: '#4E7FA8', hero: '#8DB6D9', tint: '#E2ECF5', ink: '#355F82' },
+  { color: '#8A6E3B', hero: '#C9AE7A', tint: '#F1EADC', ink: '#6B5228' },
+  { color: '#A0577E', hero: '#D395B7', tint: '#F4E4EE', ink: '#7E3E60' },
+];
+function themeKey(cat) {
+  const n = norm(cat.name);
+  if (n.includes('ocio')) return 'ocio';
+  if (n.includes('perr') || n.includes('mascot')) return 'perro';
+  if (n.includes('combust') || n.includes('gasolin')) return 'combustible';
+  if (n.includes('super') || n.includes('almuerz')) return 'super';
+  return null;
+}
+function catTheme(cat) {
+  if (!cat) return { ...NEW_CAT_PALETTE[0], icono: null };
+  const k = themeKey(cat);
+  if (k) return CAT_THEMES[k];
+  const others = categories.filter((c) => !themeKey(c));
+  const i = Math.max(0, others.indexOf(cat));
+  return { ...NEW_CAT_PALETTE[i % NEW_CAT_PALETTE.length], icono: null };
+}
+const catById = (id) => categories.find((c) => c.id === id);
+function catIcon(cat, cls = '') {
+  const t = catTheme(cat);
+  const inner = t.icono ? svg(t.icono, cls === 'xs' ? 18 : 22) : esc((cat?.name || '?').trim()[0]?.toUpperCase() || '?');
+  return `<span class="cat-icon ${cls}" style="background:${t.tint};color:${t.ink}" aria-hidden="true">${inner}</span>`;
+}
+// Estado de una categoría: se comunica con la etiqueta y el color del saldo, no con la barra.
+function catState(spent, lim, thr) {
+  if (lim <= 0) return spent > 0 ? 'over' : 'normal';
+  const pct = (spent / lim) * 100;
+  if (pct >= 100) return 'over';
+  if (pct >= (thr || 80)) return 'care';
+  return 'normal';
+}
+
+// ── Ayudas de presentación ─────────────────────────────────────────────
+
+const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+function fmtK(n) { return Math.abs(n) >= 1000 ? `Q${(n / 1000).toFixed(1).replace('.0', '')}k` : `Q${Math.round(n)}`; }
+function fmtKpi(n) { return Math.abs(n) >= 100000 ? fmtK(n) : 'Q' + Math.round(n).toLocaleString('en-US'); }
+function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function periodStart(p) { return new Date(p.startYear, p.startMonth, CUT_DAY); }
+function periodEnd(p) { return new Date(p.endYear, p.endMonth, CUT_DAY - 1); }
+function periodDays(p) { return Math.round((periodEnd(p) - periodStart(p)) / 864e5) + 1; }
+// Día del período en que estamos hoy (0 si el período no ha empezado; el total si ya cerró).
+function dayOfPeriod(p) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const s = periodStart(p), e = periodEnd(p);
+  if (today < s) return 0;
+  if (today > e) return periodDays(p);
+  return Math.round((today - s) / 864e5) + 1;
+}
+const isCurrentPeriod = (p) => p.key === getPeriod(0).key;
+const periodRange = (p) => `${CUT_DAY} ${MS[p.startMonth]} – ${CUT_DAY - 1} ${MS[p.endMonth]}`;
+const periodShort = (p) => `${cap(MS[p.startMonth])} ${p.startYear}`;
+function ago(ts) {
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return 'hace un momento';
+  const m = Math.round(s / 60);
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  return `hace ${h} ${h === 1 ? 'hora' : 'horas'}`;
+}
+
+function toast(text, action) {
+  const zone = $('toast-zone');
+  zone.innerHTML = '';
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span>${esc(text)}</span>`;
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = action.label;
+    b.addEventListener('click', () => { t.remove(); action.run(); });
+    t.appendChild(b);
+  }
+  zone.appendChild(t);
+  setTimeout(() => t.remove(), action ? 5000 : 3000);
+}
+
+// ── Navegación ─────────────────────────────────────────────────────────
+
+let currentView = 'inicio';
+let masSegment = 'categorias';
+let filterCat = '';
+let filterUser = '';
+let filterAll = false;
+let lastSyncAt = null;
+let syncFailed = false;
+
+function showView(name) {
+  currentView = name;
+  for (const v of ['inicio', 'movimientos', 'estadisticas', 'mas']) $('view-' + v).classList.toggle('hidden', v !== name);
+  document.querySelectorAll('[data-nav]').forEach((b) => {
+    const on = b.dataset.nav === name;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  if (name === 'mas') showSegment(masSegment);
+  window.scrollTo(0, 0);
+  renderAll();
+}
+function showSegment(seg) {
+  masSegment = seg;
+  document.querySelectorAll('[data-seg]').forEach((b) => {
+    const on = b.dataset.seg === seg;
+    b.classList.toggle('active', on); b.setAttribute('aria-selected', String(on));
+  });
+  $('panel-categorias').classList.toggle('hidden', seg !== 'categorias');
+  $('panel-datos').classList.toggle('hidden', seg !== 'datos');
+}
+function goMas(seg) { masSegment = seg; showView('mas'); }
+
+// Hojas que suben desde abajo (registrar, editar, categoría).
+let lastFocus = null;
+function openSheet(id) {
+  lastFocus = document.activeElement;
+  const s = $(id);
+  s.classList.add('open'); s.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+function closeOverlays() {
+  document.querySelectorAll('.sheet-backdrop.open').forEach((s) => { s.classList.remove('open'); s.setAttribute('aria-hidden', 'true'); });
+  document.body.style.overflow = '';
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+}
+const sheetOpen = (id) => $(id).classList.contains('open');
+
+// ── Pantallas ──────────────────────────────────────────────────────────
 
 function renderAll() {
   if (!me) return;
   const p = getPeriod(periodOffset);
+  const cur = isCurrentPeriod(p);
   $('period-label').textContent = periodLabel(p);
-  $('period-dates').textContent = periodDates(p);
+  $('period-dates').textContent = periodRange(p) + (cur ? ` · día ${dayOfPeriod(p)} de ${periodDays(p)}` : '');
   $('btn-hoy').classList.toggle('hidden', periodOffset === 0);
-  document.querySelectorAll('.period-name').forEach((el) => { el.textContent = periodLabel(p); });
-  $('export-period-label').textContent = `${periodLabel(p)} (${periodDates(p)})`;
-  renderRegistrar(p); renderResumen(p); renderGastos(p); renderStats(p); renderCatConfig(p);
+  document.querySelectorAll('[data-period-short]').forEach((el) => { el.textContent = periodShort(p) + (cur ? ` · día ${dayOfPeriod(p)}` : ''); });
+  $('export-period-label').textContent = `Período de ${periodLabel(p)}`;
+  renderInicio(p);
+  renderMovimientos(p);
+  renderStats(p);
+  renderCatConfig(p);
+  renderSyncCard();
+  if (sheetOpen('register-sheet')) renderRegChips();
+}
+
+// Inicio
+function renderInicio(p) {
+  const exps = expensesIn(p);
+  const cats = catsFor(p, exps);
+  let budget = 0, spent = 0;
+  const rows = cats.map((c) => {
+    const lim = limitFor(c, p.key), sp = spentIn(exps, c.id);
+    budget += lim; spent += sp;
+    return { c, lim, sp };
+  });
+
+  // Tarjeta principal
+  const avail = budget - spent;
+  $('hero-avail').textContent = avail < 0 ? '−' + fmt(-avail) : fmt(avail);
+  $('hero-avail').classList.toggle('negative', avail < 0);
+  $('hero-spent').innerHTML = `Gastado <b>${fmt(spent)}</b> de ${fmt(budget)}`;
+  let room = 100;
+  $('hero-segs').innerHTML = rows.map(({ c, sp }) => {
+    const w = budget > 0 ? Math.min(room, (sp / budget) * 100) : 0;
+    room -= w;
+    return w > 0 ? `<span style="width:${w.toFixed(2)}%;background:${catTheme(c).hero}"></span>` : '';
+  }).join('');
+  const pct = budget > 0 ? (spent / budget) * 100 : (spent > 0 ? 100 : 0);
+  const days = periodDays(p), day = dayOfPeriod(p);
+  const ideal = (day / days) * 100;
+  $('hero-ideal').style.left = `calc(${ideal.toFixed(2)}% - 1px)`;
+  $('hero-beetle').style.left = `calc(${Math.min(pct, 100).toFixed(2)}% - 9px)`;
+  $('hero-pct').textContent = `${Math.round(pct)}% usado`;
+  $('hero-ideal-txt').textContent = `ritmo ideal ${Math.round(ideal)}%`;
+  const left = days - day + 1; // días que quedan, contando hoy
+  const m1l = $('mini1-label'), m1v = $('mini1-value'), m2l = $('mini2-label'), m2v = $('mini2-value');
+  m1v.classList.toggle('negative', avail < 0);
+  if (avail < 0) {
+    m1l.textContent = 'Excedido del total'; m1v.textContent = fmt(-avail);
+  } else if (day === 0) {
+    m1l.textContent = 'Para cerrar en presupuesto'; m1v.textContent = `${fmt(avail / days)}/día`;
+  } else if (day >= days && !isCurrentPeriod(p)) {
+    m1l.textContent = 'Sin gastar al cierre'; m1v.textContent = fmt(avail);
+  } else {
+    m1l.textContent = 'Para cerrar en presupuesto'; m1v.textContent = `${fmt(avail / Math.max(left, 1))}/día`;
+  }
+  if (day === 0) { m2l.textContent = 'Días del período'; m2v.textContent = String(days); }
+  else if (day >= days && !isCurrentPeriod(p)) { m2l.textContent = 'Días restantes'; m2v.textContent = 'Cerrado'; }
+  else { m2l.textContent = 'Días restantes'; m2v.textContent = String(left); }
+
+  // Categorías
+  $('no-cats').classList.toggle('hidden', cats.length > 0);
+  $('cat-list').innerHTML = rows.map(({ c, lim, sp }) => {
+    const t = catTheme(c);
+    const st = catState(sp, lim, c.threshold);
+    const rem = lim - sp;
+    const tag = st === 'care' ? '<span class="tag tag-care">Cuidado</span>' : st === 'over' ? '<span class="tag tag-over">Excedido</span>' : '';
+    const w = lim > 0 ? Math.min((sp / lim) * 100, 100) : (sp > 0 ? 100 : 0);
+    const borrowed = exps.filter((e) => e.chargeCatId === c.id && e.catId !== c.id);
+    const lent = exps.filter((e) => e.catId === c.id && e.chargeCatId && e.chargeCatId !== c.id);
+    const notes = [];
+    if (borrowed.length) notes.push(`Incluye ${fmt(borrowed.reduce((s, e) => s + e.amount, 0))} de otras categorías (${[...new Set(borrowed.map((e) => catName(e.catId)))].map(esc).join(', ')})`);
+    if (lent.length) notes.push(`Además, ${fmt(lent.reduce((s, e) => s + e.amount, 0))} de ${esc(c.name)} se descontó de ${[...new Set(lent.map((e) => catName(e.chargeCatId)))].map(esc).join(', ')}`);
+    return `<article class="cat-card">
+      <div class="cat-top">
+        ${catIcon(c)}
+        <div class="cat-mid">
+          <div class="cat-name-row"><span class="cat-name">${esc(c.name)}</span>${tag}</div>
+          <div class="cat-sub">${fmt(sp)} de ${fmt(lim)}</div>
+        </div>
+        <div class="cat-right">
+          <div class="cat-rem state-${st}">${rem < 0 ? '−' + fmt(-rem) : fmt(rem)}</div>
+          <div class="cat-rem-label">${rem < 0 ? 'sobre' : 'quedan'}</div>
+        </div>
+      </div>
+      <div class="progress" role="progressbar" aria-label="${esc(c.name)}: ${Math.round(lim > 0 ? (sp / lim) * 100 : 0)}% usado" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(w)}"><span style="width:${w.toFixed(2)}%;background:${t.color}"></span></div>
+      ${notes.map((n) => `<div class="cat-note">${n}</div>`).join('')}
+    </article>`;
+  }).join('');
+
+  renderPlans(p);
+
+  // Período sin gastos
+  const empty = cats.length > 0 && exps.length === 0;
+  $('empty-period').classList.toggle('hidden', !empty);
+  $('hero-watermark').classList.toggle('hidden', empty); // un solo motivo decorativo por pantalla
+  if (empty) $('empty-text').textContent = `Tienes ${fmt(budget)} disponibles hasta el ${CUT_DAY - 1} de ${MF[p.endMonth].toLowerCase()}. Registra el primer gasto cuando ocurra.`;
+}
+
+// Compras en cuotas que tienen una cuota en este período. Cuando pasa la
+// última cuota, la compra deja de aparecer.
+function renderPlans(p) {
+  const groups = new Map();
+  for (const e of expenses) if (e.planId) (groups.get(e.planId) || groups.set(e.planId, []).get(e.planId)).push(e);
+  const rows = [];
+  for (const list of groups.values()) {
+    list.sort((x, y) => x.cuota - y.cuota);
+    const now = list.find((e) => periodOfDate(e.date).key === p.key);
+    if (!now) continue;
+    const after = list.filter((e) => periodOfDate(e.date).key > p.key);
+    const left = after.reduce((s, e) => s + e.amount, 0);
+    const last = list[list.length - 1];
+    rows.push(`<div class="plan-row">
+      ${catIcon(catById(chargeOf(now)), 'sm')}
+      <div class="exp-mid">
+        <div class="plan-name">${esc(now.desc)}${now.pending ? ' <span class="tag tag-pending">Pendiente de subir</span>' : ''}</div>
+        <div class="plan-sub">Cuota ${now.cuota} de ${now.cuotas} · total ${fmt(now.planTotal || 0)}</div>
+        <div class="plan-sub">${after.length ? `${after.length === 1 ? 'Falta 1 cuota' : `Faltan ${after.length} cuotas`} (${fmt(left)}) · termina en ${esc(periodLabel(periodOfDate(last.date)))}` : 'Es la última cuota'}</div>
+      </div>
+      <div class="plan-amount">${fmt(now.amount)}</div>
+    </div>`);
+  }
+  $('plans-card').classList.toggle('hidden', rows.length === 0);
+  $('plans-list').innerHTML = rows.join('');
+}
+
+// Movimientos
+function renderMovimientos(p) {
+  $('f-cats').innerHTML = [`<button class="chip-filter${!filterCat ? ' active' : ''}" type="button" data-fcat="" aria-pressed="${!filterCat}">Todas</button>`]
+    .concat(categories.map((c) => `<button class="chip-filter${filterCat === c.id ? ' active' : ''}" type="button" data-fcat="${esc(c.id)}" aria-pressed="${filterCat === c.id}"><span class="chip-dot" style="background:${catTheme(c).color}"></span>${esc(c.name)}${c.archivedFrom ? ' (quitada)' : ''}</button>`))
+    .join('');
+  $('f-users').innerHTML = [`<button class="chip-filter${!filterUser ? ' active' : ''}" type="button" data-fuser="" aria-pressed="${!filterUser}">Todos</button>`]
+    .concat(users.map((u) => `<button class="chip-filter${filterUser === u.id ? ' active' : ''}" type="button" data-fuser="${esc(u.id)}" aria-pressed="${filterUser === u.id}">${esc(u.displayName)}</button>`))
+    .concat(`<button class="chip-filter${filterAll ? ' active' : ''}" type="button" data-fall aria-pressed="${filterAll}">Todos los períodos</button>`)
+    .join('');
+
+  const raw = $('f-text').value.trim();
+  const q = norm(raw);
+  const qNum = /^[\d.,\sQq]+$/.test(raw) ? raw.replace(/[Qq,\s]/g, '') : '';
+  let exps = filterAll ? expenses.slice() : expensesIn(p);
+  if (q) exps = exps.filter((e) => norm(e.desc).includes(q) || (qNum && (e.amount.toFixed(2).includes(qNum) || String(e.amount).includes(qNum))));
+  if (filterCat) exps = exps.filter((e) => e.catId === filterCat || e.chargeCatId === filterCat);
+  if (filterUser) exps = exps.filter((e) => e.userId === filterUser);
+  exps.sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0));
+
+  const total = exps.reduce((s, e) => s + e.amount, 0);
+  const filtered = q || filterCat || filterUser;
+  $('list-total').textContent = exps.length ? `${exps.length} ${exps.length === 1 ? 'gasto' : 'gastos'} · ${fmt(total)}${filterAll ? ' · todos los períodos' : ''}` : '';
+  $('empty-gastos').classList.toggle('hidden', exps.length > 0);
+  $('empty-gastos').innerHTML = `<p>${filtered ? 'No hay gastos que coincidan.' : 'Sin gastos en este período.'}</p>`;
+
+  const shown = exps.slice(0, 300);
+  const today = todayLocal();
+  const yest = ymd(new Date(Date.now() - 864e5));
+  const groups = [];
+  for (const e of shown) {
+    let g = groups[groups.length - 1];
+    if (!g || g.date !== e.date) { g = { date: e.date, items: [] }; groups.push(g); }
+    g.items.push(e);
+  }
+  $('expense-groups').innerHTML = groups.map((g) => {
+    const [y, m, d] = g.date.split('-').map(Number);
+    const label = g.date === today ? 'Hoy' : g.date === yest ? 'Ayer' : cap(DIAS[new Date(y, m - 1, d).getDay()]);
+    const dayTotal = g.items.reduce((s, e) => s + e.amount, 0);
+    return `<div class="day-group">
+      <div class="day-head"><span class="overline">${label} · ${d} ${MS[m - 1]}${y !== new Date().getFullYear() ? ' ' + y : ''}</span><span class="day-total">${fmt(dayTotal)}</span></div>
+      <div class="rows-card">${g.items.map(expenseRow).join('')}</div>
+    </div>`;
+  }).join('') + (exps.length > shown.length ? '<div class="more-note">Se muestran los 300 más recientes. Usa la búsqueda o los filtros para encontrar otros.</div>' : '');
+}
+
+function expenseRow(e) {
+  const cat = catById(e.catId);
+  const from = e.chargeCatId ? catById(e.chargeCatId) : null;
+  const tags = [];
+  if (e.cuotas) tags.push(`<span class="tag tag-cuota">Cuota ${e.cuota}/${e.cuotas}</span>`);
+  if (e.pending) tags.push(e.error ? `<span class="tag tag-error">No se pudo subir: ${esc(e.error)}</span>` : '<span class="tag tag-pending">Pendiente de subir</span>');
+  const meta = `${esc(catName(e.catId))}${from ? ` <span class="from-chip" style="background:${catTheme(from).tint}">desde ${esc(from.name)}</span>` : ''} · ${esc(userName(e))}${e.editedAt ? ' · editado' : ''}`;
+  const inner = `${catIcon(cat, 'sm')}
+    <div class="exp-mid">
+      <div class="exp-desc">${esc(e.desc)}</div>
+      <div class="exp-meta">${meta}${tags.length ? ' ' + tags.join(' ') : ''}</div>
+    </div>
+    <div class="exp-amount">${fmt(e.amount)}</div>`;
+  if (e.pending) return `<button class="exp-row" type="button" data-del-pend="${esc(e.clientId)}" aria-label="${esc(e.desc)}, ${fmt(e.amount)}. Pendiente de subir: tocar para quitar">${inner}</button>`;
+  if (e.userId === me.id) return `<button class="exp-row" type="button" data-edit-exp="${esc(e.id)}" aria-label="${esc(e.desc)}, ${fmt(e.amount)}. Tocar para editar o eliminar">${inner}</button>`;
+  return `<div class="exp-row">${inner}</div>`;
+}
+
+// Estadísticas
+function pctChange(now, before) {
+  if (!before) return null;
+  return Math.round(((now - before) / before) * 100);
+}
+function deltaHtml(d) {
+  if (d === null) return '—';
+  if (d === 0) return 'igual';
+  return `<span class="${d > 0 ? 'delta-up' : 'delta-down'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)}%</span>`;
+}
+
+function renderStats(p) {
+  const prev = periodFromStart(p.startYear, p.startMonth - 1);
+  const exps = expensesIn(p);
+  const cut = isCurrentPeriod(p);
+  // En el período en curso se compara contra el mismo día del período anterior.
+  let prevExps = expensesIn(prev);
+  if (cut) {
+    const limit = periodStart(prev);
+    limit.setDate(limit.getDate() + dayOfPeriod(p) - 1);
+    const limStr = ymd(limit);
+    prevExps = prevExps.filter((e) => e.date <= limStr);
+  }
+  const total = exps.reduce((s, e) => s + e.amount, 0);
+  const prevTotal = prevExps.reduce((s, e) => s + e.amount, 0);
+  const prevName = MF[prev.startMonth].toLowerCase();
+
+  $('st-total').textContent = fmtKpi(total);
+  const d = pctChange(total, prevTotal);
+  $('st-total-note').innerHTML = d === null ? `sin datos de ${prevName}` : `${deltaHtml(d)} vs. ${prevName}`;
+  $('st-count').textContent = exps.length;
+  $('st-count-note').textContent = `${prevExps.length} en ${prevName}`;
+  $('st-avg').textContent = fmtKpi(exps.length ? total / exps.length : 0);
+  $('st-note').textContent = cut ? 'Comparado contra el mismo día del período anterior.' : 'Comparado contra el período anterior completo.';
+
+  // Dona: en qué se fue el dinero (por tipo real de gasto)
+  const parts = categories.map((c) => ({ c, v: spentReal(exps, c.id) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+  if (!total) {
+    $('st-donut').innerHTML = '<p class="hint">Sin gastos en este período.</p>';
+  } else {
+    const R = 42, C = 2 * Math.PI * R;
+    let acc = 0;
+    const arcs = parts.map(({ c, v }) => {
+      const len = (v / total) * C;
+      const s = `<circle cx="60" cy="60" r="${R}" fill="none" stroke="${catTheme(c).color}" stroke-width="12" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 60 60)"/>`;
+      acc += len;
+      return s;
+    }).join('');
+    $('st-donut').innerHTML = `<div class="donut">
+        <svg width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="Distribución del gasto por categoría"><circle cx="60" cy="60" r="${R}" fill="none" stroke="var(--track)" stroke-width="12"/>${arcs}</svg>
+        <div class="donut-center"><b>${fmtK(total)}</b><small>total</small></div>
+      </div>
+      <div class="donut-legend">${parts.map(({ c, v }) => `<div class="dl-row"><span class="dl-dot" style="background:${catTheme(c).color}"></span><span class="dl-name">${esc(c.name)}</span><span class="dl-val">${fmtK(v)}</span><span class="dl-pct">${Math.round((v / total) * 100)}%</span></div>`).join('')}</div>`;
+  }
+
+  // Últimos 6 períodos
+  const series = [];
+  for (let i = 5; i >= 0; i--) {
+    const q = periodFromStart(p.startYear, p.startMonth - i);
+    series.push({ q, spent: expensesIn(q).reduce((s, e) => s + e.amount, 0), current: i === 0 });
+  }
+  const budget = catsFor(p, exps).reduce((s, c) => s + limitFor(c, p.key), 0);
+  const max = Math.max(1, budget, ...series.map((x) => x.spent));
+  const closed = series.filter((x) => !x.current && x.spent > 0);
+  $('st-avg6').textContent = closed.length ? `Promedio ${fmtK(closed.reduce((s, x) => s + x.spent, 0) / closed.length)}` : '';
+  $('st-cols').innerHTML = (budget ? `<div class="budget-line" style="bottom:calc(${(budget / max).toFixed(4)} * (100% - 18px))"><span>Presupuesto ${fmtK(budget)}</span></div>` : '')
+    + series.map((x) => `<div class="bar-col">
+        <span class="bar-val">${x.spent ? fmtK(x.spent) : ''}</span>
+        <div class="bar${x.current ? ' current' : ''}" style="height:${((x.spent / max) * 100).toFixed(2)}%" title="${esc(periodLabel(x.q))}: ${fmt(x.spent)}"></div>
+      </div>`).join('');
+  $('st-col-labels').innerHTML = series.map((x) => `<span class="${x.current ? 'current' : ''}">${cap(MS[x.q.startMonth])}</span>`).join('');
+
+  // Comparado con el período anterior
+  const both = categories.filter((c) => spentReal(exps, c.id) > 0 || spentReal(prevExps, c.id) > 0 || catsFor(p, exps).includes(c));
+  $('st-compare').innerHTML = both.length
+    ? `<table class="cmp-table">
+        <thead><tr><th>Categoría</th><th>${esc(cap(MS[prev.startMonth]))}</th><th>${esc(cap(MS[p.startMonth]))}</th><th>Cambio</th></tr></thead>
+        <tbody>${both.map((c) => {
+          const a = spentReal(prevExps, c.id), b = spentReal(exps, c.id);
+          return `<tr><td>${esc(c.name)}</td><td>${fmtK(a)}</td><td>${fmtK(b)}</td><td>${deltaHtml(pctChange(b, a))}</td></tr>`;
+        }).join('')}
+        <tr class="total"><td>Total</td><td>${fmtK(prevTotal)}</td><td>${fmtK(total)}</td><td>${deltaHtml(pctChange(total, prevTotal))}</td></tr></tbody>
+      </table>`
+    : '<p class="hint">Sin datos para comparar.</p>';
+
+  // Quién registró más
+  const people = users.map((u, i) => {
+    const mine = exps.filter((e) => e.userId === u.id);
+    return { name: u.displayName, i, total: mine.reduce((s, e) => s + e.amount, 0), count: mine.length };
+  });
+  const others = exps.filter((e) => !users.some((u) => u.id === e.userId));
+  if (others.length) people.push({ name: 'Otros', i: 2, total: others.reduce((s, e) => s + e.amount, 0), count: others.length });
+  const userColor = (i) => ['#5B4B8A', '#C46B7E', '#2F6B5E'][i % 3];
+  $('st-people').innerHTML = people.map((x) => `<div class="person">
+      <span class="avatar-lg${x.i % 2 ? ' alt' : ''}">${esc(x.name[0] || '?')}</span>
+      <div class="person-amount">${fmt(x.total)}</div>
+      <div class="person-sub">${esc(x.name)} · ${x.count} ${x.count === 1 ? 'gasto' : 'gastos'}${total ? ' · ' + Math.round((x.total / total) * 100) + '%' : ''}</div>
+    </div>`).join('');
+  $('st-split').innerHTML = total ? people.map((x) => `<span style="width:${(x.total / total) * 100}%;background:${userColor(x.i)}"></span>`).join('') : '';
+
+  // Los 5 gastos más grandes
+  const top = exps.slice().sort((a, b) => b.amount - a.amount).slice(0, 5);
+  $('st-top').innerHTML = top.length
+    ? top.map((e, i) => `<div class="top-row"><span><span class="top-rank">${i + 1}</span><span class="top-desc">${esc(e.desc)}</span>${e.cuotas ? ` <span class="tag tag-cuota">Cuota ${e.cuota}/${e.cuotas}</span>` : ''}<br><span class="exp-meta">${esc(catName(e.catId))} · ${fmtDate(e.date)} · ${esc(userName(e))}</span></span><b>${fmt(e.amount)}</b></div>`).join('')
+    : '<p class="hint">Sin gastos en este período.</p>';
+}
+
+// Más › Categorías
+function renderCatConfig(p) {
+  const list = $('cat-config-list');
+  if (list.contains(document.activeElement)) return; // no interrumpir mientras escriben un presupuesto
+  const exps = expensesIn(p);
+  const cats = catsFor(p, exps);
+  const active = cats.filter((c) => !(c.archivedFrom && p.key >= c.archivedFrom));
+  $('budget-total').textContent = fmt(active.reduce((s, c) => s + limitFor(c, p.key), 0));
+  $('budget-meta').textContent = `${active.length} ${active.length === 1 ? 'categoría' : 'categorías'} · ${periodLabel(p)}`;
+  list.innerHTML = cats.length ? cats.map((c) => {
+    const removed = c.archivedFrom && p.key >= c.archivedFrom;
+    return `<div class="cfg-row">
+      ${catIcon(c)}
+      ${removed
+        ? `<div class="cfg-name"><b>${esc(c.name)} <span class="tag tag-muted">Quitada</span></b><small>Presupuesto ${fmt(limitFor(c, p.key))}</small></div>`
+        : `<button class="cfg-name" type="button" data-edit-cat="${esc(c.id)}" aria-label="Editar ${esc(c.name)}"><b>${esc(c.name)}</b><small>Aviso al ${c.threshold}% · Editar</small></button>
+           <label class="money-input"><span>Q</span><input type="number" min="0" step="0.01" inputmode="decimal" value="${limitFor(c, p.key)}" data-limit-cat="${esc(c.id)}" aria-label="Presupuesto de ${esc(c.name)}"></label>`}
+    </div>`;
+  }).join('') : '<p class="hint" style="padding:16px">Sin categorías en este período.</p>';
+  $('cat-note').textContent = `Los cambios de presupuesto aplican desde ${periodLabel(p)} en adelante; los períodos anteriores conservan el suyo.`;
+}
+
+// Más › Datos
+function renderSyncCard() {
+  const n = myPending().length;
+  const offline = !$('offline-banner').classList.contains('hidden');
+  const warn = offline || n > 0 || syncFailed;
+  $('sync-card').classList.toggle('warn', warn);
+  $('sync-title').textContent = offline ? 'Sin conexión' : n ? `${n} ${n === 1 ? 'gasto pendiente' : 'gastos pendientes'} de subir` : syncFailed ? 'No se pudo sincronizar' : 'Todo sincronizado';
+  $('sync-sub').textContent = lastSyncAt ? `Última sincronización: ${ago(lastSyncAt)}` : 'Todavía no se sincroniza en esta sesión';
+  const icon = $('sync-icon');
+  const want = warn ? 'importar' : 'check';
+  if (icon.dataset.icon !== want) { icon.dataset.icon = want; icon.removeAttribute('data-done'); hydrateIcons(icon.parentElement); }
+}
+
+// ── Registrar (hoja) ───────────────────────────────────────────────────
+
+let regCat = '';
+let regCharge = '';
+
+function openRegister() {
+  if (!activeCats().some((c) => c.id === regCat)) regCat = activeCats()[0]?.id || '';
+  setRegDate('hoy');
+  openSheet('register-sheet');
+  renderRegChips(); updateRegButton();
+  setTimeout(() => $('exp-amount').focus(), 120);
+}
+
+function setRegDate(mode, value) {
+  const d = mode === 'hoy' ? todayLocal() : mode === 'ayer' ? ymd(new Date(Date.now() - 864e5)) : (value || $('exp-date').value || todayLocal());
+  $('exp-date').value = d;
+  document.querySelectorAll('[data-date]').forEach((b) => b.classList.toggle('active', b.dataset.date === mode));
+  $('exp-date').classList.toggle('hidden', mode !== 'otra');
+  $('date-other-label').textContent = mode === 'otra' ? fmtDate(d) : 'Otra fecha';
+}
+
+function regChip(c, selected, charged, exps, p, amount, attr) {
+  const lim = limitFor(c, p.key), sp = spentIn(exps, c.id), rem = lim - sp;
+  let st = catState(sp, lim, c.threshold);
+  let bal = rem >= 0 ? `Quedan ${fmt(rem)}` : `Excedido ${fmt(-rem)}`;
+  if (charged && amount > 0) {
+    const after = rem - amount;
+    st = catState(sp + amount, lim, c.threshold);
+    bal = `${rem >= 0 ? fmt(rem) : '−' + fmt(-rem)} → ${after >= 0 ? fmt(after) : '−' + fmt(-after)}`;
+  }
+  return `<button type="button" class="cat-chip" role="radio" aria-checked="${selected}" ${attr}="${esc(c.id)}">
+    ${catIcon(c, 'xs')}
+    <span class="cat-chip-text"><span class="cat-chip-name">${esc(c.name)}</span><span class="cat-chip-bal state-${st}">${bal}</span></span>
+  </button>`;
+}
+
+function renderRegChips() {
+  const p = periodOfDate($('exp-date').value || todayLocal());
+  const exps = expensesIn(p);
+  const amount = parseFloat($('exp-amount').value) || 0;
+  const n = $('exp-inst').checked ? Number($('exp-cuotas').value) : 1;
+  const thisAmount = n > 1 && Number.isInteger(n) && n <= 48 ? splitCuotas(amount, n)[0] : amount;
+  const cats = activeCats();
+  if (regCharge === regCat || !cats.some((c) => c.id === regCharge)) regCharge = cats.find((c) => c.id !== regCat)?.id || '';
+  const useCharge = $('exp-other').checked && regCharge;
+  const charged = useCharge ? regCharge : regCat;
+  $('cat-chips').innerHTML = cats.length
+    ? cats.map((c) => regChip(c, c.id === regCat, c.id === charged, exps, p, thisAmount, 'data-reg-cat')).join('')
+    : '<p class="hint">Todavía no hay categorías. Créenlas en Más › Categorías.</p>';
+  $('charge-chips').innerHTML = cats.filter((c) => c.id !== regCat)
+    .map((c) => regChip(c, c.id === regCharge, c.id === charged, exps, p, thisAmount, 'data-reg-charge')).join('');
+  $('exp-cat').value = regCat;
+  $('exp-charge').value = regCharge;
+  $('charge-box').classList.toggle('hidden', !$('exp-other').checked);
+}
+
+function updateRegButton() {
+  const amount = parseFloat($('exp-amount').value) || 0;
+  // El campo del monto crece con lo que escriben, para que la "Q" quede pegada.
+  $('exp-amount').style.width = `${Math.max(2, ($('exp-amount').value || '0').length + 0.6)}ch`;
+  const n = Number($('exp-cuotas').value);
+  const inst = $('exp-inst').checked && Number.isInteger(n) && n >= 2;
+  $('exp-submit').disabled = !(amount > 0);
+  $('exp-submit').textContent = `Registrar ${fmt(amount)}${inst ? ` en ${n} cuotas` : ''}`;
+}
+
+// Muestra u oculta las opciones de cuotas y explica cómo quedarían.
+function updateInstallments() {
+  const on = $('exp-inst').checked;
+  $('exp-inst-box').classList.toggle('hidden', !on);
+  $('exp-amount-label').textContent = on ? 'Monto total' : 'Monto';
+  if (on) {
+    const n = Number($('exp-cuotas').value), total = parseFloat($('exp-amount').value), ds = $('exp-date').value;
+    if (!Number.isInteger(n) || n < 2 || n > 48) $('exp-inst-hint').textContent = 'Elige entre 2 y 48 cuotas.';
+    else if (!(total > 0) || !ds) $('exp-inst-hint').textContent = 'Escribe el monto total para ver las cuotas.';
+    else {
+      const parts = splitCuotas(total, n);
+      const first = periodLabel(periodOfDate(ds)), last = periodLabel(periodOfDate(cuotaDate(ds, n - 1)));
+      const diff = parts[n - 1] !== parts[0] ? ` (la última de ${fmt(parts[n - 1])})` : '';
+      $('exp-inst-hint').textContent = `${n} cuotas de ${fmt(parts[0])}${diff}, de ${first} a ${last}. La primera se descuenta en la fecha de compra y las siguientes el ${CUT_DAY} de cada corte.`;
+    }
+  }
+  renderRegChips(); updateRegButton();
+}
+
+// ── Acciones ───────────────────────────────────────────────────────────
+
+async function addExpense(ev) {
+  ev.preventDefault();
+  const body = {
+    desc: $('exp-desc').value.trim(), amount: parseFloat($('exp-amount').value),
+    catId: $('exp-cat').value, date: $('exp-date').value,
+    chargeCatId: $('exp-other').checked ? $('exp-charge').value : null,
+  };
+  if ($('exp-other').checked && !body.chargeCatId) { alert('Elige de qué categoría se descuenta.'); return; }
+  if ($('exp-inst').checked) {
+    const n = Number($('exp-cuotas').value);
+    if (!Number.isInteger(n) || n < 2 || n > 48) { alert('El número de cuotas debe estar entre 2 y 48.'); return; }
+    body.cuotas = n;
+  }
+  if (!body.catId) { alert('Elige una categoría.'); return; }
+  if (!body.desc) { alert('Escribe una descripción.'); $('exp-desc').focus(); return; }
+  if (!(body.amount > 0) || !body.date) { alert('Completa monto, categoría, descripción y fecha.'); return; }
+  body.clientId = newClientId();
+  $('exp-submit').disabled = true;
+  const clearForm = () => {
+    $('exp-desc').value = ''; $('exp-amount').value = '';
+    $('exp-other').checked = false;
+    $('exp-inst').checked = false; $('exp-cuotas').value = '3';
+    updateInstallments();
+  };
+  try {
+    setSyncStatus('loading');
+    const d = await api('/api/gastos', { method: 'POST', body });
+    applyData(d); setSyncStatus('ok');
+    clearForm(); closeOverlays();
+    const created = d.created;
+    toast(created.cuotas ? `Compra en ${created.cuotas} cuotas registrada` : 'Gasto registrado', {
+      label: 'Deshacer',
+      run: async () => {
+        try { applyData(await api(`/api/gastos/${encodeURIComponent(created.id)}`, { method: 'DELETE' })); toast(created.cuotas ? 'Compra eliminada' : 'Gasto eliminado'); }
+        catch (e) { alert(e.offline ? 'No hay conexión para deshacer. Puedes eliminarlo luego desde Movimientos.' : e.message); }
+      },
+    });
+    syncPending();
+  } catch (e) {
+    if (e.offline || e.status === 401) {
+      // Sin conexión (o sesión vencida): se guarda en el celular y se sube después.
+      const { clientId, ...rest } = body;
+      pending.push({ clientId, body: rest, userId: (me || estado?.user || {}).id, createdAt: Date.now() });
+      savePending();
+      if (me) {
+        mergePending(); renderAll();
+        setSyncStatus('error', OFFLINE_MSG);
+        clearForm(); closeOverlays();
+        toast('Guardado en el celular · se sube al volver la conexión', {
+          label: 'Deshacer',
+          run: () => { pending = pending.filter((x) => x.clientId !== clientId); savePending(); mergePending(); renderAll(); renderSyncCard(); },
+        });
+      }
+    } else {
+      setSyncStatus('error', e.message); alert(e.message);
+    }
+  } finally { updateRegButton(); }
 }
 
 function catOptions(selected) {
@@ -289,332 +914,6 @@ function fillCharge(selectEl, catId, selected) {
   if (selected && list.some((c) => c.id === selected)) selectEl.value = selected;
 }
 
-function renderRegistrar(p) {
-  const sel = $('exp-cat');
-  const prev = sel.value;
-  sel.innerHTML = activeCats().length ? catOptions() : '<option value="">Sin categorías todavía</option>';
-  if (prev && activeCats().some((c) => c.id === prev)) sel.value = prev;
-  fillCharge($('exp-charge'), sel.value, $('exp-charge').value);
-  if (!$('exp-date').value) $('exp-date').value = todayLocal();
-
-  const exps = expensesIn(p);
-  const rows = catsFor(p, exps).map((c) => {
-    const lim = limitFor(c, p.key), spent = spentIn(exps, c.id), rem = lim - spent;
-    const pct = lim > 0 ? (spent / lim) * 100 : 0;
-    return `<div class="mini-row"><span>${esc(c.name)}</span><span class="${textClass(pct, c.threshold)}">${rem >= 0 ? 'Quedan <b>' + fmt(rem) + '</b>' : 'Excedido ' + fmt(-rem)}</span></div>`;
-  });
-  $('mini-summary').innerHTML = rows.length
-    ? `<div class="mini-row" style="font-weight:600;color:#444"><span>Disponible en ${esc(periodLabel(p))}</span></div>${rows.join('')}`
-    : (categories.length || expenses.length
-      ? '<div class="mini-row">Primero crea una categoría en la pestaña Categorías.</div>'
-      : '<div class="mini-row" style="display:block;line-height:1.5">Todavía no hay categorías. Si vienen de la versión anterior, ve a <a href="#" data-go="datos">Datos → Traer datos de Firebase</a>. Si empiezan de cero, créenlas en <a href="#" data-go="categorias">Categorías</a>.</div>');
-}
-
-function renderResumen(p) {
-  const list = $('cat-list-resumen');
-  const exps = expensesIn(p);
-  const cats = catsFor(p, exps);
-  list.innerHTML = '';
-  $('empty-resumen').classList.toggle('hidden', cats.length > 0);
-  let totBudget = 0, totSpent = 0;
-  for (const cat of cats) {
-    const spent = spentIn(exps, cat.id), lim = limitFor(cat, p.key);
-    totBudget += lim; totSpent += spent;
-    const rawPct = lim > 0 ? (spent / lim) * 100 : 0, pct = Math.min(Math.round(rawPct), 100);
-    const rem = lim - spent, thr = cat.threshold || 80;
-    const borrowed = exps.filter((e) => e.chargeCatId === cat.id && e.catId !== cat.id);
-    const lent = exps.filter((e) => e.catId === cat.id && e.chargeCatId && e.chargeCatId !== cat.id);
-    const notes = [];
-    if (borrowed.length) notes.push(`Incluye ${fmt(borrowed.reduce((s, e) => s + e.amount, 0))} de otras categorías (${[...new Set(borrowed.map((e) => catName(e.catId)))].map(esc).join(', ')})`);
-    if (lent.length) notes.push(`Además, ${fmt(lent.reduce((s, e) => s + e.amount, 0))} de ${esc(cat.name)} se descontó de ${[...new Set(lent.map((e) => catName(e.chargeCatId)))].map(esc).join(', ')}`);
-    const row = document.createElement('div');
-    row.className = 'cat-row';
-    row.innerHTML = `
-      <div class="cat-header">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span class="cat-name">${esc(cat.name)}</span>
-          ${rawPct >= 100 ? '<span class="badge badge-danger">Límite superado</span>' : rawPct >= thr ? '<span class="badge badge-warn">Por alcanzar límite</span>' : ''}
-        </div>
-        <div class="cat-amounts">${fmt(spent)} de <span>${fmt(lim)}</span></div>
-      </div>
-      <div class="progress-track"><div class="progress-bar ${barClass(rawPct, thr)}" style="width:${pct}%"></div></div>
-      <div class="cat-footer">
-        <span class="cat-pct">${pct}% usado</span>
-        <span class="cat-rem ${textClass(rawPct, thr)}">${rem >= 0 ? 'Disponible: ' + fmt(rem) : 'Excedido: ' + fmt(Math.abs(rem))}</span>
-      </div>${notes.map((n) => `<div class="cat-note">${n}</div>`).join('')}`;
-    list.appendChild(row);
-  }
-  renderPlans(p);
-  const avail = totBudget - totSpent;
-  $('s-budget').textContent = fmt(totBudget);
-  $('s-spent').textContent = fmt(totSpent);
-  $('s-avail').textContent = fmt(avail);
-  $('s-avail').className = 'card-value ' + (avail < 0 ? 'danger' : avail < totBudget * 0.2 ? 'warn' : 'ok');
-}
-
-// Compras en cuotas que tienen una cuota en este período. Cuando pasa la
-// última cuota, la compra deja de aparecer.
-function renderPlans(p) {
-  const groups = new Map();
-  for (const e of expenses) if (e.planId) (groups.get(e.planId) || groups.set(e.planId, []).get(e.planId)).push(e);
-  const rows = [];
-  for (const list of groups.values()) {
-    list.sort((x, y) => x.cuota - y.cuota);
-    const now = list.find((e) => periodOfDate(e.date).key === p.key);
-    if (!now) continue;
-    const after = list.filter((e) => periodOfDate(e.date).key > p.key);
-    const left = after.reduce((s, e) => s + e.amount, 0);
-    const last = list[list.length - 1];
-    rows.push(`<div class="exp-item">
-      <div class="exp-left">
-        <span class="exp-name">${esc(now.desc)}${now.pending ? ' <span class="pend-tag">Pendiente de subir</span>' : ''}</span>
-        <span class="exp-meta">Cuota ${now.cuota} de ${now.cuotas} · ${catLabel(now)} · total ${fmt(now.planTotal || 0)}</span>
-        <span class="exp-meta">${after.length ? `${after.length === 1 ? 'Falta 1 cuota' : `Faltan ${after.length} cuotas`} (${fmt(left)}) · termina en ${esc(periodLabel(periodOfDate(last.date)))}` : 'Es la última cuota'}</span>
-      </div>
-      <div class="exp-right"><span class="exp-amount">${fmt(now.amount)}</span></div>
-    </div>`);
-  }
-  $('plans-card').classList.toggle('hidden', rows.length === 0);
-  $('plans-list').innerHTML = rows.join('');
-}
-
-function renderGastos(p) {
-  const fc = $('f-cat'), fu = $('f-user');
-  const cv = fc.value, uv = fu.value;
-  fc.innerHTML = '<option value="">Categorías</option>' + categories.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}${c.archivedFrom ? ' (quitada)' : ''}</option>`).join('');
-  fu.innerHTML = '<option value="">Personas</option>' + users.map((u) => `<option value="${esc(u.id)}">${esc(u.displayName)}</option>`).join('');
-  fc.value = cv; fu.value = uv;
-
-  const all = $('f-all').checked;
-  const q = norm($('f-text').value.trim());
-  let exps = all ? expenses.slice() : expensesIn(p);
-  if (q) exps = exps.filter((e) => norm(e.desc).includes(q));
-  if (fc.value) exps = exps.filter((e) => e.catId === fc.value || e.chargeCatId === fc.value);
-  if (fu.value) exps = exps.filter((e) => e.userId === fu.value);
-  exps.sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0));
-
-  const total = exps.reduce((s, e) => s + e.amount, 0);
-  const filtered = q || fc.value || fu.value;
-  $('list-total').textContent = exps.length
-    ? `${exps.length} ${exps.length === 1 ? 'gasto' : 'gastos'} · ${fmt(total)}${all ? ' · todos los períodos' : ''}${filtered ? ' · con filtros' : ''}`
-    : '';
-  $('empty-gastos').classList.toggle('hidden', exps.length > 0);
-  $('empty-gastos').textContent = filtered ? 'No hay gastos que coincidan.' : 'Sin gastos en este período.';
-  const shown = exps.slice(0, 300);
-  $('expense-list').innerHTML = shown.map((e) => `
-    <div class="exp-item">
-      <div class="exp-left">
-        <span class="exp-name">${esc(e.desc)}${cuotaTag(e)}</span>
-        <span class="exp-meta">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}${e.editedAt ? ' · editado' : ''}</span>
-        ${e.pending ? (e.error ? `<span class="pend-tag pend-error">No se pudo subir: ${esc(e.error)}</span>` : '<span class="pend-tag">Pendiente de subir</span>') : ''}
-      </div>
-      <div class="exp-right">
-        <span class="exp-amount">${fmt(e.amount)}</span>
-        ${e.pending ? `<button class="btn-del" data-del-pend="${esc(e.clientId)}" aria-label="Quitar">✕</button>` : e.userId === me.id ? `<button class="btn-small" data-edit-exp="${esc(e.id)}" aria-label="Editar">✎</button><button class="btn-del" data-del-exp="${esc(e.id)}" aria-label="Eliminar">✕</button>` : ''}
-      </div>
-    </div>`).join('') + (exps.length > shown.length ? `<div class="empty">Se muestran los 300 más recientes. Usa los filtros para encontrar otros.</div>` : '');
-}
-
-function renderCatConfig(p) {
-  const exps = expensesIn(p);
-  const cats = catsFor(p, exps);
-  $('empty-cats').classList.toggle('hidden', cats.length > 0);
-  $('cat-config-list').innerHTML = cats.map((c) => {
-    const removed = c.archivedFrom && p.key >= c.archivedFrom;
-    return `
-    <div class="exp-item">
-      <div class="exp-left">
-        <span class="exp-name">${esc(c.name)} ${removed ? '<span class="badge badge-muted">Quitada</span>' : ''}</span>
-        <span class="exp-meta">Límite: ${fmt(limitFor(c, p.key))} · Aviso al ${c.threshold}%</span>
-      </div>
-      ${removed ? '' : `<div class="exp-right"><button class="btn-small" data-edit-cat="${esc(c.id)}">Editar</button><button class="btn-del" data-del-cat="${esc(c.id)}">Quitar</button></div>`}
-    </div>`;
-  }).join('');
-}
-
-// ── Estadísticas ───────────────────────────────────────────────────────
-
-function pctChange(now, before) {
-  if (!before) return null;
-  return Math.round(((now - before) / before) * 100);
-}
-function deltaHtml(d) {
-  if (d === null) return '<span class="delta same">—</span>';
-  if (d === 0) return '<span class="delta same">igual</span>';
-  return `<span class="delta ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)}%</span>`;
-}
-
-function renderStats(p) {
-  const prev = periodFromStart(p.startYear, p.startMonth - 1);
-  const exps = expensesIn(p), prevExps = expensesIn(prev);
-  const total = exps.reduce((s, e) => s + e.amount, 0);
-  const prevTotal = prevExps.reduce((s, e) => s + e.amount, 0);
-
-  $('st-total').textContent = fmt(total);
-  const d = pctChange(total, prevTotal);
-  $('st-total-note').innerHTML = d === null ? 'Sin datos del período anterior' : `${deltaHtml(d)} vs. ${esc(MF[prev.startMonth])}`;
-  $('st-count').textContent = exps.length;
-  $('st-count-note').textContent = `${prevExps.length} en ${MF[prev.startMonth]}`;
-  $('st-avg').textContent = fmt(exps.length ? total / exps.length : 0);
-
-  // En qué se fue el dinero
-  const cats = catsFor(p, exps).map((c) => ({ c, spent: spentReal(exps, c.id) })).filter((x) => x.spent > 0 || catsFor(p, []).includes(x.c)).sort((a, b) => b.spent - a.spent);
-  $('st-dist').innerHTML = total
-    ? cats.map(({ c, spent }) => {
-      const share = (spent / total) * 100;
-      return `<div class="stat-bar-row"><span class="lbl">${esc(c.name)}</span>
-        <div class="stat-track"><div class="stat-fill" style="width:${share.toFixed(1)}%;background:${catColor(c.id)}"></div></div>
-        <span class="val">${fmtShort(spent)} · ${Math.round(share)}%</span></div>`;
-    }).join('')
-    : '<div class="empty">Sin gastos en este período.</div>';
-
-  // Últimos 6 períodos
-  const series = [];
-  for (let i = 5; i >= 0; i--) {
-    const q = periodFromStart(p.startYear, p.startMonth - i);
-    const qe = expensesIn(q);
-    const budget = catsFor(q, qe).reduce((s, c) => s + limitFor(c, q.key), 0);
-    series.push({ q, spent: qe.reduce((s, e) => s + e.amount, 0), budget, current: i === 0 });
-  }
-  const max = Math.max(1, ...series.map((x) => Math.max(x.spent, x.budget)));
-  $('st-cols').innerHTML = series.map((x) => `
-    <div class="col">
-      ${x.budget ? `<div class="col-limit" style="bottom:${(x.budget / max) * 100}%" title="Presupuesto ${fmt(x.budget)}"></div>` : ''}
-      <span class="col-val">${x.spent ? fmtShort(x.spent) : ''}</span>
-      <div class="col-bar ${x.current ? 'current' : ''} ${x.budget && x.spent > x.budget ? 'over' : ''}" style="height:${(x.spent / max) * 100}%" title="${esc(periodLabel(x.q))}: ${fmt(x.spent)}"></div>
-    </div>`).join('');
-  $('st-col-labels').innerHTML = series.map((x) => `<span>${MS[x.q.startMonth]}</span>`).join('');
-
-  // Comparado con el período anterior
-  const both = categories.filter((c) => catsFor(p, exps).includes(c) || catsFor(prev, prevExps).includes(c));
-  $('st-compare').innerHTML = both.length
-    ? `<div class="compare-row" style="font-size:11px;color:#888"><span>Categoría</span><span>${esc(MS[prev.startMonth])} → ${esc(MS[p.startMonth])}</span><span style="text-align:right">Cambio</span></div>`
-      + both.map((c) => {
-        const a = spentReal(prevExps, c.id), b = spentReal(exps, c.id);
-        return `<div class="compare-row"><span>${esc(c.name)}</span><span style="color:#666">${fmtShort(a)} → <b style="color:#1a1a1a">${fmtShort(b)}</b></span>${deltaHtml(pctChange(b, a))}</div>`;
-      }).join('')
-    : '<div class="empty">Sin datos para comparar.</div>';
-
-  // Quién registró más
-  const people = users.map((u, i) => {
-    const mine = exps.filter((e) => e.userId === u.id);
-    return { u, i, total: mine.reduce((s, e) => s + e.amount, 0), count: mine.length };
-  });
-  const others = exps.filter((e) => !users.some((u) => u.id === e.userId));
-  if (others.length) people.push({ u: { displayName: 'Otros' }, i: 2, total: others.reduce((s, e) => s + e.amount, 0), count: others.length });
-  $('st-people').innerHTML = people.map((x) => `
-    <div class="person">
-      <div class="avatar avatar-${x.i % 3}">${esc(x.u.displayName[0] || '?')}</div>
-      <div class="big">${fmt(x.total)}</div>
-      <div class="small">${esc(x.u.displayName)} · ${x.count} ${x.count === 1 ? 'gasto' : 'gastos'}${total ? ' · ' + Math.round((x.total / total) * 100) + '%' : ''}</div>
-    </div>`).join('');
-  $('st-split').innerHTML = total ? people.map((x) => `<div style="width:${(x.total / total) * 100}%;background:${USER_COLORS[x.i % USER_COLORS.length]}"></div>`).join('') : '';
-
-  // Los 5 gastos más grandes
-  const top = exps.slice().sort((a, b) => b.amount - a.amount).slice(0, 5);
-  $('st-top').innerHTML = top.length
-    ? top.map((e, i) => `<div class="top-item"><span><span class="top-rank">${i + 1}</span>${esc(e.desc)}${cuotaTag(e)}<br><span class="exp-meta" style="margin-left:18px">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}</span></span><b>${fmt(e.amount)}</b></div>`).join('')
-    : '<div class="empty">Sin gastos en este período.</div>';
-}
-
-// ── Acciones ───────────────────────────────────────────────────────────
-
-async function addExpense(ev) {
-  ev.preventDefault();
-  const body = {
-    desc: $('exp-desc').value.trim(), amount: parseFloat($('exp-amount').value),
-    catId: $('exp-cat').value, date: $('exp-date').value,
-    chargeCatId: $('exp-other').checked ? $('exp-charge').value : null,
-  };
-  if ($('exp-other').checked && !body.chargeCatId) { alert('Elige de qué categoría se descuenta.'); return; }
-  if ($('exp-inst').checked) {
-    const n = Number($('exp-cuotas').value);
-    if (!Number.isInteger(n) || n < 2 || n > 48) { alert('El número de cuotas debe estar entre 2 y 48.'); return; }
-    body.cuotas = n;
-  }
-  if (!body.desc || !(body.amount > 0) || !body.catId || !body.date) { alert('Completa monto, categoría, descripción y fecha.'); return; }
-  body.clientId = newClientId();
-  $('exp-submit').disabled = true;
-  const clearForm = () => {
-    $('exp-desc').value = ''; $('exp-amount').value = '';
-    $('exp-other').checked = false; $('exp-charge').classList.add('hidden');
-    $('exp-inst').checked = false; updateInstallments();
-  };
-  try {
-    setSyncStatus('loading');
-    const d = await api('/api/gastos', { method: 'POST', body });
-    applyData(d); setSyncStatus('ok');
-    clearForm(); showConfirm(d.created);
-    syncPending();
-  } catch (e) {
-    if (e.offline || e.status === 401) {
-      // Sin conexión (o sesión vencida): se guarda en el celular y se sube después.
-      const { clientId, ...rest } = body;
-      pending.push({ clientId, body: rest, userId: (me || estado?.user || {}).id, createdAt: Date.now() });
-      savePending();
-      if (me) {
-        mergePending(); renderAll();
-        setSyncStatus('error', OFFLINE_MSG);
-        clearForm(); showConfirm(expenses.find((x) => x.clientId === clientId));
-      }
-    } else {
-      setSyncStatus('error', e.message); alert(e.message);
-    }
-  } finally { $('exp-submit').disabled = false; }
-}
-
-// Muestra u oculta las opciones de cuotas y explica cómo quedarían.
-function updateInstallments() {
-  const on = $('exp-inst').checked;
-  $('exp-inst-box').classList.toggle('hidden', !on);
-  $('exp-amount-label').textContent = on ? 'Monto total (Q)' : 'Monto (Q)';
-  if (!on) return;
-  const n = Number($('exp-cuotas').value), total = parseFloat($('exp-amount').value), ds = $('exp-date').value;
-  if (!Number.isInteger(n) || n < 2 || n > 48) { $('exp-inst-hint').textContent = 'Elige entre 2 y 48 cuotas.'; return; }
-  if (!(total > 0) || !ds) { $('exp-inst-hint').textContent = 'Escribe el monto total y la fecha de compra para ver las cuotas.'; return; }
-  const parts = splitCuotas(total, n);
-  const first = periodLabel(periodOfDate(ds)), last = periodLabel(periodOfDate(cuotaDate(ds, n - 1)));
-  const diff = parts[n - 1] !== parts[0] ? ` (la última de ${fmt(parts[n - 1])})` : '';
-  $('exp-inst-hint').textContent = `${n} cuotas de ${fmt(parts[0])}${diff}, una por período de ${first} a ${last}. La primera se descuenta en la fecha de compra y las siguientes el ${CUT_DAY} de cada corte.`;
-}
-
-function showConfirm(exp) {
-  const p = periodOfDate(exp.date);
-  const exps = expensesIn(p);
-  $('confirm-title').textContent = exp.pending ? 'Guardado en este celular' : exp.cuotas ? `Compra en ${exp.cuotas} cuotas registrada` : `Gasto registrado por ${me.displayName}`;
-  $('confirm-sub').textContent = `${exp.desc} — ${fmt(exp.amount)} en ${catName(exp.catId)}`
-    + (exp.chargeCatId ? `, descontado de ${catName(exp.chargeCatId)}` : '')
-    + (exp.cuotas ? `. Cuota 1 de ${exp.cuotas} (total ${fmt(exp.planTotal)}); la última cae en ${periodLabel(periodOfDate(cuotaDate(exp.date, exp.cuotas - 1)))}` : '')
-    + (exp.pending ? '. No hay conexión: se subirá solo cuando vuelva.' : '');
-  $('confirm-icon').textContent = exp.pending ? '⏳' : '✓';
-  $('confirm-icon').style.background = exp.pending ? '#fef3c7' : '#dcfce7';
-  let totalBudget = 0, totalSpent = 0;
-  $('confirm-cats').innerHTML = catsFor(p, exps).map((c) => {
-    const spent = spentIn(exps, c.id), lim = limitFor(c, p.key);
-    totalBudget += lim; totalSpent += spent;
-    const rawPct = lim > 0 ? (spent / lim) * 100 : 0, pct = Math.min(Math.round(rawPct), 100);
-    const rem = lim - spent, thr = c.threshold || 80, isThis = c.id === chargeOf(exp);
-    let barColor = '#639922', hl = '';
-    if (rawPct >= 100) { barColor = '#E24B4A'; hl = 'background:#FEF5F5;border:0.5px solid #F7C1C1;'; }
-    else if (rawPct >= thr) { barColor = '#EF9F27'; hl = 'background:#FEFAF0;border:0.5px solid #FAC775;'; }
-    else if (isThis) hl = 'background:#F4FAE8;border:0.5px solid #C0DD97;';
-    const status = rawPct >= 100
-      ? `<span style="color:#A32D2D;font-weight:500">Excedido en ${fmt(Math.abs(rem))}</span>`
-      : `<span style="color:${rawPct >= thr ? '#854F0B' : '#3B6D11'};font-weight:${rawPct >= thr ? 500 : 400}">Quedan ${fmt(rem)}</span>`;
-    return `<div style="padding:8px 10px;border-radius:8px;${hl}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:13px;font-weight:500">${esc(c.name)}${isThis ? ` <span style="font-size:10px;font-weight:400;color:#888">(${exp.chargeCatId ? 'se descontó aquí' : 'este gasto'})</span>` : ''}</span>
-        <span style="font-size:12px;font-weight:500">${pct}% usado</span>
-      </div>
-      <div style="height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-bottom:4px"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div></div>
-      <div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#666">${fmt(spent)} de ${fmt(lim)}</span><span style="font-size:11px">${status}</span></div>
-    </div>`;
-  }).join('');
-  $('confirm-period').textContent = periodLabel(p);
-  $('confirm-total-avail').textContent = fmt(totalBudget - totalSpent);
-  $('confirm-overlay').classList.add('open');
-}
-
 function openEditExpense(id) {
   const e = expenses.find((x) => x.id === id); if (!e) return;
   editingExpId = id;
@@ -625,7 +924,8 @@ function openEditExpense(id) {
   $('ee-charge').classList.toggle('hidden', !e.chargeCatId);
   $('ee-hint').textContent = e.cuotas ? `Es la cuota ${e.cuota} de ${e.cuotas}. La descripción y la categoría cambian en todas las cuotas; el monto y la fecha, solo en esta.` : '';
   $('ee-hint').classList.toggle('hidden', !e.cuotas);
-  $('edit-exp-overlay').classList.add('open');
+  $('ee-delete').textContent = e.cuotas ? 'Eliminar la compra completa' : 'Eliminar gasto';
+  openSheet('edit-exp-sheet');
 }
 
 async function saveEditExpense(ev) {
@@ -649,15 +949,24 @@ async function deleteExpense(id) {
     ? `"${e.desc}" es una compra en ${e.cuotas} cuotas (total ${fmt(e.planTotal || 0)}).\n\n¿Eliminar la compra completa? Se borran todas sus cuotas.`
     : `¿Eliminar "${e.desc}" por ${fmt(e.amount)}?`;
   if (!confirm(text)) return;
-  try { await mutate(`/api/gastos/${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
+  try { await mutate(`/api/gastos/${encodeURIComponent(id)}`, { method: 'DELETE' }); closeOverlays(); toast(e.cuotas ? 'Compra eliminada' : 'Gasto eliminado'); } catch {}
 }
 
-async function addCategory(ev) {
-  ev.preventDefault();
+function openNewCategory() {
+  editingCatId = null;
+  $('cat-sheet-title').textContent = 'Nueva categoría';
+  $('cat-name').value = ''; $('cat-limit').value = ''; $('cat-threshold').value = '80';
+  $('cat-hint').textContent = `Empieza a contar desde ${periodLabel(getPeriod(periodOffset))}.`;
+  $('cat-delete').classList.add('hidden');
+  openSheet('cat-sheet');
+  setTimeout(() => $('cat-name').focus(), 120);
+}
+
+async function addCategory() {
   const body = { name: $('cat-name').value.trim(), limit: parseFloat($('cat-limit').value), threshold: parseInt($('cat-threshold').value, 10) || 80, from: getPeriod(periodOffset).key };
   try {
     await mutate('/api/categorias', { method: 'POST', body });
-    $('cat-name').value = ''; $('cat-limit').value = ''; $('cat-threshold').value = '80';
+    closeOverlays();
     toast('Categoría guardada');
   } catch {}
 }
@@ -666,15 +975,30 @@ function openEditCategory(id) {
   const c = categories.find((x) => x.id === id); if (!c) return;
   const p = getPeriod(periodOffset);
   editingCatId = id;
-  $('ec-name').value = c.name; $('ec-limit').value = limitFor(c, p.key); $('ec-threshold').value = c.threshold;
-  $('ec-hint').textContent = `El límite nuevo aplica desde ${periodLabel(p)} en adelante. Los períodos anteriores conservan el suyo. El nombre y el aviso cambian en todos.`;
-  $('edit-cat-overlay').classList.add('open');
+  $('cat-sheet-title').textContent = 'Editar categoría';
+  $('cat-name').value = c.name; $('cat-limit').value = limitFor(c, p.key); $('cat-threshold').value = c.threshold;
+  $('cat-hint').textContent = `El límite nuevo aplica desde ${periodLabel(p)} en adelante. Los períodos anteriores conservan el suyo. El nombre y el aviso cambian en todos.`;
+  $('cat-delete').classList.remove('hidden');
+  openSheet('cat-sheet');
 }
 
-async function saveEditCategory(ev) {
-  ev.preventDefault();
-  const body = { name: $('ec-name').value.trim(), limit: parseFloat($('ec-limit').value), threshold: parseInt($('ec-threshold').value, 10), from: getPeriod(periodOffset).key };
+async function saveEditCategory() {
+  const body = { name: $('cat-name').value.trim(), limit: parseFloat($('cat-limit').value), threshold: parseInt($('cat-threshold').value, 10), from: getPeriod(periodOffset).key };
   try { await mutate(`/api/categorias/${encodeURIComponent(editingCatId)}`, { method: 'PUT', body }); closeOverlays(); toast('Cambios guardados'); } catch {}
+}
+
+// Presupuesto editado directo en la lista (mismo cambio que en "Editar categoría").
+async function saveInlineLimit(input) {
+  const c = categories.find((x) => x.id === input.dataset.limitCat); if (!c) return;
+  const p = getPeriod(periodOffset);
+  const limit = parseFloat(input.value);
+  if (!(limit > 0)) { alert('El presupuesto debe ser mayor a cero.'); input.value = limitFor(c, p.key); return; }
+  if (limit === limitFor(c, p.key)) return;
+  input.blur();
+  try {
+    await mutate(`/api/categorias/${encodeURIComponent(c.id)}`, { method: 'PUT', body: { name: c.name, limit, threshold: c.threshold, from: p.key } });
+    toast(`Presupuesto de ${c.name} actualizado desde ${periodLabel(p)}`);
+  } catch { input.value = limitFor(c, p.key); }
 }
 
 async function deleteCategory(id) {
@@ -685,24 +1009,8 @@ async function deleteCategory(id) {
     ? `¿Quitar "${c.name}" desde ${periodLabel(p)}?\n\nLos períodos anteriores la siguen mostrando con sus gastos.`
     : `¿Eliminar "${c.name}"? No tiene gastos registrados.`;
   if (!confirm(text)) return;
-  try { await mutate(`/api/categorias/${encodeURIComponent(id)}`, { method: 'DELETE', body: { from: p.key } }); } catch {}
+  try { await mutate(`/api/categorias/${encodeURIComponent(id)}`, { method: 'DELETE', body: { from: p.key } }); closeOverlays(); } catch {}
 }
-
-async function importFirebase() {
-  const btn = $('btn-import'), msg = $('import-msg');
-  btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Trayendo datos…';
-  try {
-    const d = await api('/api/importar-firebase', { method: 'POST' });
-    applyData(d);
-    const r = d.resultado;
-    msg.className = 'msg info';
-    msg.textContent = `Listo. En Firebase había ${r.enFirebase.gastos} gastos y ${r.enFirebase.categorias} categorías. Se agregaron ${r.gastos} gastos y ${r.categorias} categorías nuevas; lo demás ya estaba.`;
-  } catch (e) {
-    msg.className = 'msg error'; msg.textContent = e.message;
-  } finally { btn.disabled = false; }
-}
-
-function closeOverlays() { document.querySelectorAll('.overlay').forEach((o) => o.classList.remove('open')); }
 
 // ── Exportar a Excel ───────────────────────────────────────────────────
 
@@ -791,7 +1099,11 @@ function showLogin() {
 function showApp(offlineCopy) {
   $('login-screen').classList.add('hidden');
   $('main-app').classList.remove('hidden');
-  $('user-label').textContent = me.displayName;
+  const initial = (me.displayName || '?').trim()[0].toUpperCase();
+  $('avatar-initial').textContent = initial;
+  $('account-initial').textContent = initial;
+  $('account-name').textContent = me.displayName;
+  showView('inicio');
   $('exp-date').value = todayLocal();
   if (offlineCopy) {
     applyData(offlineCopy.data);
@@ -852,41 +1164,72 @@ async function doLogout() {
 // ── Arranque ───────────────────────────────────────────────────────────
 
 function bindEvents() {
+  hydrateIcons();
   $('login-form').addEventListener('submit', doLogin);
   $('login-reset').addEventListener('click', resetPassword);
-  $('user-pill').addEventListener('click', doLogout);
+
+  // Navegación
+  document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => showView(b.dataset.nav)));
+  document.querySelectorAll('[data-seg]').forEach((b) => b.addEventListener('click', () => showSegment(b.dataset.seg)));
+  $('avatar-btn').addEventListener('click', () => goMas('datos'));
+  $('go-edit-cats').addEventListener('click', () => goMas('categorias'));
+  document.querySelectorAll('[data-go-cats]').forEach((b) => b.addEventListener('click', () => goMas('categorias')));
   document.querySelectorAll('[data-period]').forEach((b) => b.addEventListener('click', () => changePeriod(Number(b.dataset.period))));
   $('btn-hoy').addEventListener('click', () => { periodOffset = 0; renderAll(); });
-  $('tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) showTab(t.dataset.tab); });
+
+  // Registrar
+  $('fab').addEventListener('click', openRegister);
+  document.querySelectorAll('[data-open-register]').forEach((b) => b.addEventListener('click', openRegister));
   $('exp-form').addEventListener('submit', addExpense);
-  ['exp-inst', 'exp-cuotas', 'exp-amount', 'exp-date'].forEach((id) => $(id).addEventListener('input', updateInstallments));
+  $('exp-amount').addEventListener('input', updateInstallments);
+  ['exp-inst', 'exp-cuotas'].forEach((id) => $(id).addEventListener('input', updateInstallments));
   $('exp-inst').addEventListener('change', updateInstallments);
-  $('mini-summary').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); showTab(g.dataset.go); } });
-  // "Descontar de otra categoría": mostrar u ocultar la lista y no ofrecer la misma categoría.
-  for (const [chk, cat, chg] of [['exp-other', 'exp-cat', 'exp-charge'], ['ee-other', 'ee-cat', 'ee-charge']]) {
-    $(chk).addEventListener('change', () => { fillCharge($(chg), $(cat).value, $(chg).value); $(chg).classList.toggle('hidden', !$(chk).checked); });
-    $(cat).addEventListener('change', () => fillCharge($(chg), $(cat).value, $(chg).value));
-  }
-  $('cat-form').addEventListener('submit', addCategory);
+  $('exp-other').addEventListener('change', renderRegChips);
+  $('cat-chips').addEventListener('click', (e) => { const b = e.target.closest('[data-reg-cat]'); if (b) { regCat = b.dataset.regCat; renderRegChips(); } });
+  $('charge-chips').addEventListener('click', (e) => { const b = e.target.closest('[data-reg-charge]'); if (b) { regCharge = b.dataset.regCharge; renderRegChips(); } });
+  document.querySelectorAll('[data-date]').forEach((b) => b.addEventListener('click', () => {
+    setRegDate(b.dataset.date);
+    if (b.dataset.date === 'otra') { try { $('exp-date').showPicker(); } catch { $('exp-date').focus(); } }
+    updateInstallments();
+  }));
+  $('exp-date').addEventListener('change', () => { setRegDate('otra', $('exp-date').value); updateInstallments(); });
+
+  // Editar gasto
   $('edit-exp-form').addEventListener('submit', saveEditExpense);
-  $('edit-cat-form').addEventListener('submit', saveEditCategory);
-  $('confirm-close').addEventListener('click', closeOverlays);
+  $('ee-delete').addEventListener('click', () => deleteExpense(editingExpId));
+  $('ee-other').addEventListener('change', () => { fillCharge($('ee-charge'), $('ee-cat').value, $('ee-charge').value); $('ee-charge').classList.toggle('hidden', !$('ee-other').checked); });
+  $('ee-cat').addEventListener('change', () => fillCharge($('ee-charge'), $('ee-cat').value, $('ee-charge').value));
+
+  // Categorías
+  $('btn-new-cat').addEventListener('click', openNewCategory);
+  $('cat-form').addEventListener('submit', (e) => { e.preventDefault(); if (editingCatId) saveEditCategory(); else addCategory(); });
+  $('cat-delete').addEventListener('click', () => deleteCategory(editingCatId));
+  $('cat-config-list').addEventListener('click', (e) => { const ed = e.target.closest('[data-edit-cat]'); if (ed) openEditCategory(ed.dataset.editCat); });
+  $('cat-config-list').addEventListener('change', (e) => { if (e.target.matches('[data-limit-cat]')) saveInlineLimit(e.target); });
+  $('cat-config-list').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-limit-cat]')) e.target.blur(); });
+
+  // Hojas
   document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeOverlays));
-  document.querySelectorAll('.overlay').forEach((o) => o.addEventListener('click', (e) => { if (e.target === o) closeOverlays(); }));
+  document.querySelectorAll('.sheet-backdrop').forEach((o) => o.addEventListener('click', (e) => { if (e.target === o) closeOverlays(); }));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlays(); });
-  $('expense-list').addEventListener('click', (e) => {
+
+  // Movimientos
+  $('expense-groups').addEventListener('click', (e) => {
     const ed = e.target.closest('[data-edit-exp]'); if (ed) return openEditExpense(ed.dataset.editExp);
-    const dl = e.target.closest('[data-del-exp]'); if (dl) return deleteExpense(dl.dataset.delExp);
     const dp = e.target.closest('[data-del-pend]'); if (dp) return removePending(dp.dataset.delPend);
   });
-  $('cat-config-list').addEventListener('click', (e) => {
-    const ed = e.target.closest('[data-edit-cat]'); if (ed) return openEditCategory(ed.dataset.editCat);
-    const dl = e.target.closest('[data-del-cat]'); if (dl) return deleteCategory(dl.dataset.delCat);
+  $('f-text').addEventListener('input', () => renderMovimientos(getPeriod(periodOffset)));
+  $('f-cats').addEventListener('click', (e) => { const b = e.target.closest('[data-fcat]'); if (b) { filterCat = b.dataset.fcat; renderMovimientos(getPeriod(periodOffset)); } });
+  $('f-users').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-fuser]'); if (b) { filterUser = b.dataset.fuser; renderMovimientos(getPeriod(periodOffset)); return; }
+    if (e.target.closest('[data-fall]')) { filterAll = !filterAll; renderMovimientos(getPeriod(periodOffset)); }
   });
-  ['f-text', 'f-cat', 'f-user', 'f-all'].forEach((id) => $(id).addEventListener('input', () => renderGastos(getPeriod(periodOffset))));
+
+  // Datos
+  $('btn-sync').addEventListener('click', loadData);
   $('btn-export-global').addEventListener('click', exportGlobal);
   $('btn-export-cat').addEventListener('click', exportPorCategoria);
-  $('btn-import').addEventListener('click', importFirebase);
+  $('btn-logout').addEventListener('click', doLogout);
 
   // Mantener los datos al día entre los dos.
   setInterval(() => { if (me && document.visibilityState === 'visible') loadData(); }, 30000);

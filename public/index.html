@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gastos familiares</title>
-<meta name="theme-color" content="#1a1a1a">
+<meta name="theme-color" content="#F5F3EC">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/iconos/icono-192.png">
 <link rel="apple-touch-icon" href="/iconos/apple-touch-icon.png">
@@ -12,6 +12,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Gastos">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <link rel="stylesheet" href="/estilos.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <script type="module" src="/app.js"></script>
@@ -19,248 +22,353 @@
 <body>
 
 <!-- INICIO DE SESIÓN -->
-<div id="login-screen" class="hidden">
+<div id="login-screen" class="login hidden">
   <div class="login-card">
-    <div style="font-size:32px;margin-bottom:10px;text-align:center">🏠</div>
-    <h3>Gastos familiares</h3>
-    <p class="sub">Entra con tu correo</p>
+    <div class="login-logo" data-icon="iris" data-size="44"></div>
+    <h1 class="login-title">Gastos familiares</h1>
+    <p class="login-sub">Entra con tu correo</p>
     <div id="login-prueba" class="banner-prueba hidden">Modo de prueba: entra solo con el correo, sin contraseña. No lo usen con datos reales.</div>
     <form id="login-form">
-      <div class="form-group"><label for="login-email">Correo</label><input type="email" id="login-email" autocomplete="username" required></div>
-      <div class="form-group" id="login-pass-group"><label for="login-pass">Contraseña</label><input type="password" id="login-pass" autocomplete="current-password"></div>
-      <button class="btn" type="submit" id="login-btn">Entrar</button>
+      <label class="field-label" for="login-email">Correo</label>
+      <input class="input" type="email" id="login-email" autocomplete="username" required>
+      <div id="login-pass-group">
+        <label class="field-label" for="login-pass">Contraseña</label>
+        <input class="input" type="password" id="login-pass" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" type="submit" id="login-btn">Entrar</button>
     </form>
-    <button class="link" id="login-reset" type="button">¿Olvidaste tu contraseña?</button>
-    <div class="msg" id="login-msg"></div>
+    <button class="link-btn" id="login-reset" type="button">¿Olvidaste tu contraseña?</button>
+    <div class="msg" id="login-msg" role="status"></div>
   </div>
 </div>
 
 <!-- APP PRINCIPAL -->
 <div id="main-app" class="hidden">
-  <div class="app">
-    <header>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo" data-icon="iris" data-size="30"></span>
       <div>
-        <h2>Gastos familiares</h2>
-        <div id="sync-status"><span class="sync-dot sync-loading"></span>Cargando...</div>
+        <div class="brand-name">Gastos familiares</div>
+        <div id="sync-status" class="sync" role="status"></div>
       </div>
-      <span class="user-pill" id="user-pill" title="Cerrar sesión"><span id="user-label"></span> · Salir</span>
-    </header>
+    </div>
+    <button class="avatar-btn" id="avatar-btn" type="button" aria-label="Cuenta y datos"><span id="avatar-initial"></span></button>
+  </header>
 
+  <main class="screens">
     <div class="offline-banner hidden" id="offline-banner" role="status"></div>
 
-    <div class="period-bar">
-      <div class="period-nav">
-        <button class="btn-nav" data-period="-1" aria-label="Período anterior">‹</button>
-        <div>
-          <div style="font-size:14px;font-weight:600" id="period-label">—</div>
-          <div style="font-size:11px;color:#888" id="period-dates">—</div>
+    <!-- INICIO (Resumen) -->
+    <section class="view" id="view-inicio" aria-labelledby="period-label">
+      <div class="period-card">
+        <button class="period-btn" type="button" data-period="-1" aria-label="Período anterior"><span data-icon="chevron_izq" data-size="20"></span></button>
+        <div class="period-text">
+          <div class="period-name" id="period-label">—</div>
+          <div class="period-sub"><span id="period-dates">—</span><button class="link-btn small hidden" id="btn-hoy" type="button">Ir al actual</button></div>
         </div>
-        <button class="btn-nav" data-period="1" aria-label="Período siguiente">›</button>
+        <button class="period-btn" type="button" data-period="1" aria-label="Período siguiente"><span data-icon="chevron_der" data-size="20"></span></button>
       </div>
-      <button class="btn-hoy hidden" id="btn-hoy">Ir al actual</button>
-    </div>
 
-    <div class="tabs" id="tabs">
-      <button class="tab active" data-tab="nuevo">+ Registrar</button>
-      <button class="tab" data-tab="resumen">Resumen</button>
-      <button class="tab" data-tab="gastos">Gastos</button>
-      <button class="tab" data-tab="estadisticas">Estadísticas</button>
-      <button class="tab" data-tab="categorias">Categorías</button>
-      <button class="tab" data-tab="datos">Datos</button>
-    </div>
-
-    <!-- REGISTRAR (pantalla principal) -->
-    <div class="section active" id="tab-nuevo">
-      <div class="form-card">
-        <div class="form-title">Registrar gasto</div>
-        <form id="exp-form" class="form-grid">
-          <div class="form-group"><label for="exp-amount" id="exp-amount-label">Monto (Q)</label><input class="amount-input" type="number" id="exp-amount" placeholder="0.00" min="0" step="0.01" inputmode="decimal" required></div>
-          <div class="form-group"><label for="exp-cat">Categoría</label><select id="exp-cat" required></select></div>
-          <div class="form-group full other-cat">
-            <label class="check"><input type="checkbox" id="exp-other"> Descontarlo de otra categoría (por excepción)</label>
-            <select id="exp-charge" class="hidden" aria-label="Categoría de donde se descuenta"></select>
-          </div>
-          <div class="form-group full other-cat">
-            <label class="check"><input type="checkbox" id="exp-inst"> Pagar en cuotas</label>
-            <div id="exp-inst-box" class="hidden inst-box">
-              <label for="exp-cuotas">Número de cuotas</label>
-              <input type="number" id="exp-cuotas" min="2" max="48" step="1" inputmode="numeric" value="3">
-              <p class="form-hint" id="exp-inst-hint" style="margin:6px 0 0"></p>
-            </div>
-          </div>
-          <div class="form-group full"><label for="exp-desc">Descripción</label><input type="text" id="exp-desc" placeholder="Ej. Supermercado La Torre" maxlength="120" required></div>
-          <div class="form-group"><label for="exp-date">Fecha</label><input type="date" id="exp-date" required></div>
-          <div class="form-group" style="justify-content:flex-end"><button class="btn btn-block" type="submit" id="exp-submit">Registrar gasto</button></div>
-        </form>
-        <div class="mini-summary" id="mini-summary"></div>
+      <div class="hero" id="hero">
+        <span class="hero-watermark" id="hero-watermark" data-icon="iris" data-size="190" data-sw="0.6" aria-hidden="true"></span>
+        <div class="overline hero-overline">Disponible</div>
+        <div class="hero-amount" id="hero-avail">Q0.00</div>
+        <div class="hero-spent" id="hero-spent">—</div>
+        <div class="hero-bar" id="hero-bar" aria-hidden="true">
+          <div class="hero-segs" id="hero-segs"></div>
+          <span class="hero-ideal" id="hero-ideal"></span>
+          <span class="hero-beetle" id="hero-beetle" data-icon="escarabajo" data-size="18"></span>
+        </div>
+        <div class="hero-legend"><span id="hero-pct">—</span><span id="hero-ideal-txt">—</span></div>
+        <div class="hero-minis">
+          <div class="hero-mini"><div class="hero-mini-label" id="mini1-label">Para cerrar en presupuesto</div><div class="hero-mini-value" id="mini1-value">—</div></div>
+          <div class="hero-mini"><div class="hero-mini-label" id="mini2-label">Días restantes</div><div class="hero-mini-value" id="mini2-value">—</div></div>
+        </div>
       </div>
-    </div>
 
-    <!-- RESUMEN -->
-    <div class="section" id="tab-resumen">
-      <div class="cards">
-        <div class="card"><div class="card-label">Presupuesto</div><div class="card-value" id="s-budget">Q0.00</div></div>
-        <div class="card"><div class="card-label">Gastado</div><div class="card-value" id="s-spent">Q0.00</div></div>
-        <div class="card"><div class="card-label">Disponible</div><div class="card-value" id="s-avail">Q0.00</div></div>
+      <div class="section-head">
+        <h2 class="section-title">Categorías</h2>
+        <button class="link-btn" type="button" id="go-edit-cats">Editar</button>
       </div>
-      <div class="cat-list" id="cat-list-resumen"></div>
-      <div class="form-card hidden" id="plans-card" style="margin-top:1rem">
-        <div class="form-title">Compras en cuotas</div>
+      <div class="cat-list" id="cat-list"></div>
+      <div class="card empty-card hidden" id="no-cats">
+        <p>Todavía no hay categorías. Créenlas en <button class="link-btn" type="button" data-go-cats>Más › Categorías</button>.</p>
+      </div>
+
+      <div class="card plans-card hidden" id="plans-card">
+        <h2 class="section-title">Compras en cuotas</h2>
         <div id="plans-list"></div>
       </div>
-      <div class="empty hidden" id="empty-resumen">No hay categorías para este período.</div>
-    </div>
 
-    <!-- GASTOS -->
-    <div class="section" id="tab-gastos">
-      <div class="form-card">
-        <div class="form-title">Gastos</div>
-        <div class="filters">
-          <input class="full" type="search" id="f-text" placeholder="Buscar por descripción…">
-          <select id="f-cat"></select>
-          <select id="f-user"></select>
-          <label class="check full"><input type="checkbox" id="f-all"> Buscar en todos los períodos</label>
+      <div class="card empty-card hidden" id="empty-period">
+        <div class="empty-illus" aria-hidden="true">
+          <span data-icon="iris" data-size="54" data-sw="1.3"></span>
+          <span data-icon="escarabajo" data-size="34" data-sw="1.3"></span>
         </div>
-        <div class="list-total" id="list-total"></div>
-        <div id="expense-list"></div>
-        <div class="empty hidden" id="empty-gastos">No hay gastos que coincidan.</div>
+        <h3 class="empty-title">Período nuevo</h3>
+        <p class="empty-text" id="empty-text">—</p>
+        <button class="btn-primary" type="button" data-open-register>Registrar gasto</button>
       </div>
-    </div>
+    </section>
+
+    <!-- MOVIMIENTOS (Gastos) -->
+    <section class="view hidden" id="view-movimientos" aria-labelledby="mov-title">
+      <div class="screen-head">
+        <h1 class="screen-title" id="mov-title">Movimientos</h1>
+        <span class="screen-period" data-period-short></span>
+      </div>
+      <div class="search">
+        <span data-icon="buscar" data-size="20"></span>
+        <input type="search" id="f-text" placeholder="Buscar por descripción o monto" aria-label="Buscar por descripción o monto">
+      </div>
+      <div class="chips-scroll" id="f-cats" role="group" aria-label="Filtrar por categoría"></div>
+      <div class="chips-scroll" id="f-users" role="group" aria-label="Filtrar por persona y período"></div>
+      <div class="list-summary" id="list-total"></div>
+      <div id="expense-groups"></div>
+      <div class="card empty-card hidden" id="empty-gastos"></div>
+    </section>
 
     <!-- ESTADÍSTICAS -->
-    <div class="section" id="tab-estadisticas">
-      <div class="cards">
-        <div class="card"><div class="card-label">Gastado</div><div class="card-value" id="st-total">Q0.00</div><div class="card-note" id="st-total-note"></div></div>
-        <div class="card"><div class="card-label">Gastos</div><div class="card-value" id="st-count">0</div><div class="card-note" id="st-count-note"></div></div>
-        <div class="card"><div class="card-label">Promedio</div><div class="card-value" id="st-avg">Q0.00</div><div class="card-note">por gasto</div></div>
+    <section class="view hidden" id="view-estadisticas" aria-labelledby="st-title">
+      <div class="screen-head">
+        <h1 class="screen-title" id="st-title">Estadísticas</h1>
+        <span class="screen-period" data-period-short></span>
       </div>
-      <div class="form-card">
-        <div class="form-title">En qué se fue el dinero</div>
-        <p class="form-hint">Por tipo de gasto, aunque alguno se haya descontado de otra categoría.</p>
-        <div class="stat-bars" id="st-dist"></div>
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-label">Gastado</div><div class="kpi-value" id="st-total">Q0</div><div class="kpi-delta" id="st-total-note"></div></div>
+        <div class="kpi"><div class="kpi-label">Gastos</div><div class="kpi-value" id="st-count">0</div><div class="kpi-delta" id="st-count-note"></div></div>
+        <div class="kpi"><div class="kpi-label">Promedio</div><div class="kpi-value" id="st-avg">Q0</div><div class="kpi-delta">por gasto</div></div>
       </div>
-      <div class="form-card">
-        <div class="form-title">Últimos 6 períodos</div>
-        <div class="columns" id="st-cols"></div>
-        <div class="col-labels" id="st-col-labels"></div>
-        <div class="legend"><span><b></b>Período que estás viendo</span><span><i></i>Presupuesto</span></div>
+      <p class="note" id="st-note"></p>
+
+      <div class="card">
+        <h2 class="section-title">En qué se fue el dinero</h2>
+        <p class="hint">Por tipo de gasto, aunque alguno se haya descontado de otra categoría.</p>
+        <div class="donut-wrap" id="st-donut"></div>
       </div>
-      <div class="form-card">
-        <div class="form-title">Comparado con el período anterior</div>
+
+      <div class="card">
+        <div class="card-head"><h2 class="section-title">Últimos 6 períodos</h2><span class="card-head-note" id="st-avg6"></span></div>
+        <div class="bars" id="st-cols"></div>
+        <div class="bars-labels" id="st-col-labels"></div>
+        <div class="legend">
+          <span><i class="lg lg-current"></i>En curso</span>
+          <span><i class="lg lg-closed"></i>Cerrados</span>
+          <span><i class="lg lg-budget"></i>Presupuesto</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="section-title">Comparado con el período anterior</h2>
         <div id="st-compare"></div>
       </div>
-      <div class="form-card">
-        <div class="form-title">Quién registró más</div>
+
+      <div class="card">
+        <h2 class="section-title">Quién registró más</h2>
         <div class="people" id="st-people"></div>
         <div class="split" id="st-split"></div>
       </div>
-      <div class="form-card">
-        <div class="form-title">Los 5 gastos más grandes</div>
+
+      <div class="card">
+        <h2 class="section-title">Los 5 gastos más grandes</h2>
         <div id="st-top"></div>
       </div>
-    </div>
+    </section>
 
-    <!-- CATEGORÍAS -->
-    <div class="section" id="tab-categorias">
-      <div class="form-card">
-        <div class="form-title">Categorías de <span class="period-name"></span></div>
-        <p class="form-hint">Si cambias un límite, aplica desde este período en adelante. Los meses anteriores conservan el límite que tenían.</p>
-        <div id="cat-config-list"></div>
-        <div class="empty hidden" id="empty-cats">Sin categorías en este período.</div>
+    <!-- MÁS (Categorías | Datos) -->
+    <section class="view hidden" id="view-mas" aria-labelledby="mas-title">
+      <div class="screen-head"><h1 class="screen-title" id="mas-title">Más</h1></div>
+      <div class="segmented" role="tablist" aria-label="Secciones">
+        <button class="seg-item active" type="button" role="tab" aria-selected="true" data-seg="categorias">Categorías</button>
+        <button class="seg-item" type="button" role="tab" aria-selected="false" data-seg="datos">Datos</button>
       </div>
-      <div class="form-card">
-        <div class="form-title">Nueva categoría</div>
-        <form id="cat-form" class="form-grid">
-          <div class="form-group full"><label for="cat-name">Nombre</label><input type="text" id="cat-name" placeholder="Ej. Farmacia" maxlength="40" required></div>
-          <div class="form-group"><label for="cat-limit">Límite por período (Q)</label><input type="number" id="cat-limit" placeholder="0.00" min="0" step="0.01" inputmode="decimal" required></div>
-          <div class="form-group"><label for="cat-threshold">Avisar al (%)</label><input type="number" id="cat-threshold" value="80" min="1" max="100" required></div>
-          <div class="form-group full"><button class="btn" type="submit">Guardar categoría</button></div>
-        </form>
-        <p class="form-hint" style="margin:10px 0 0">Empieza a contar desde <span class="period-name"></span>.</p>
-      </div>
-    </div>
 
-    <!-- DATOS -->
-    <div class="section" id="tab-datos">
-      <div class="form-card">
-        <div class="form-title">Exportar a Excel</div>
-        <p style="font-size:13px;color:#666;margin-bottom:14px">Período: <strong id="export-period-label">—</strong></p>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <button class="btn" id="btn-export-global">⬇ Resumen global + detalle de gastos</button>
-          <button class="btn-outline" id="btn-export-cat">⬇ Por categoría (una hoja por categoría)</button>
+      <div id="panel-categorias" role="tabpanel">
+        <div class="budget-card">
+          <div>
+            <div class="overline">Presupuesto mensual</div>
+            <div class="budget-total" id="budget-total">Q0.00</div>
+          </div>
+          <div class="budget-meta" id="budget-meta">—</div>
         </div>
+        <div class="card list-card" id="cat-config-list"></div>
+        <button class="btn-dashed" type="button" id="btn-new-cat"><span data-icon="agregar" data-size="20"></span>Nueva categoría</button>
+        <p class="note" id="cat-note"></p>
       </div>
-      <div class="form-card">
-        <div class="form-title">Respaldo</div>
-        <p style="font-size:13px;color:#666;margin-bottom:14px;line-height:1.5">El servidor guarda una copia automática cada día y conserva los últimos 30 días. También puedes descargar una copia completa ahora.</p>
-        <a class="btn-outline" href="/api/respaldo" download style="display:inline-block;text-decoration:none">⬇ Descargar copia completa</a>
+
+      <div id="panel-datos" class="hidden" role="tabpanel">
+        <div class="sync-card" id="sync-card">
+          <span class="sync-check" id="sync-icon" data-icon="check" data-size="22"></span>
+          <div class="sync-text">
+            <div class="sync-title" id="sync-title">Todo sincronizado</div>
+            <div class="sync-sub" id="sync-sub">—</div>
+          </div>
+          <button class="btn-small" type="button" id="btn-sync">Sincronizar</button>
+        </div>
+
+        <h2 class="overline section-overline">Exportar</h2>
+        <div class="card list-card">
+          <button class="row-btn" type="button" id="btn-export-global">
+            <span class="row-icon" data-icon="exportar" data-size="20"></span>
+            <span class="row-text"><b>Excel: resumen y detalle</b><small id="export-period-label">—</small></span>
+            <span data-icon="chevron_der" data-size="18" class="row-chev"></span>
+          </button>
+          <button class="row-btn" type="button" id="btn-export-cat">
+            <span class="row-icon" data-icon="exportar" data-size="20"></span>
+            <span class="row-text"><b>Excel: una hoja por categoría</b><small>Del período seleccionado en Inicio</small></span>
+            <span data-icon="chevron_der" data-size="18" class="row-chev"></span>
+          </button>
+          <a class="row-btn" href="/api/respaldo" download>
+            <span class="row-icon" data-icon="exportar" data-size="20"></span>
+            <span class="row-text"><b>Copia completa (respaldo)</b><small>Todos los gastos y categorías · el servidor también guarda una diaria</small></span>
+            <span data-icon="chevron_der" data-size="18" class="row-chev"></span>
+          </a>
+        </div>
+
+        <h2 class="overline section-overline">Cuenta</h2>
+        <div class="card list-card">
+          <div class="account-row">
+            <span class="avatar-lg" id="account-initial"></span>
+            <div class="row-text"><b id="account-name">—</b><small>Libro: Gastos familiares</small></div>
+          </div>
+          <button class="row-btn danger" type="button" id="btn-logout">
+            <span class="row-icon" data-icon="salir" data-size="20"></span>
+            <span class="row-text"><b>Cerrar sesión</b></span>
+          </button>
+        </div>
+
+        <footer class="made-home">
+          <span data-icon="escarabajo" data-size="22" class="made-beetle"></span>
+          <span>Gastos familiares · hecho en casa</span>
+        </footer>
       </div>
-      <div class="form-card">
-        <div class="form-title">Traer datos de la versión anterior</div>
-        <p style="font-size:13px;color:#666;margin-bottom:14px;line-height:1.5">Copia las categorías y los gastos que tenían en Firebase. Si lo presionas más de una vez, no duplica nada.</p>
-        <button class="btn-outline" id="btn-import">Traer datos de Firebase</button>
-        <div class="msg" id="import-msg"></div>
-      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Navegación principal">
+    <button class="nav-item active" type="button" data-nav="inicio" aria-current="page"><span data-icon="inicio" data-size="24" data-sw="1.8"></span><span>Inicio</span></button>
+    <button class="nav-item" type="button" data-nav="movimientos"><span data-icon="movimientos" data-size="24" data-sw="1.8"></span><span>Movimientos</span></button>
+    <button class="nav-fab" type="button" id="fab" aria-label="Registrar gasto"><span data-icon="agregar" data-size="26" data-sw="2.2"></span></button>
+    <button class="nav-item" type="button" data-nav="estadisticas"><span data-icon="estadisticas" data-size="24" data-sw="1.8"></span><span>Estadísticas</span></button>
+    <button class="nav-item" type="button" data-nav="mas"><span data-icon="mas" data-size="24" data-sw="1.8"></span><span>Más</span></button>
+  </nav>
+</div>
+
+<!-- HOJA: REGISTRAR -->
+<div class="sheet-backdrop" id="register-sheet" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="reg-title">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-bar">
+      <button class="link-btn" type="button" data-close>Cancelar</button>
+      <h2 class="sheet-title" id="reg-title">Nuevo gasto</h2>
+      <span class="sheet-bar-spacer"></span>
     </div>
+    <form id="exp-form" class="sheet-body" novalidate>
+      <div class="overline center" id="exp-amount-label">Monto</div>
+      <div class="amount-wrap">
+        <span class="amount-prefix">Q</span>
+        <input class="amount-input" type="number" id="exp-amount" placeholder="0" min="0" step="0.01" inputmode="decimal" aria-labelledby="exp-amount-label">
+      </div>
+
+      <div class="field-label" id="cat-chips-label">Categoría</div>
+      <div class="chip-grid" id="cat-chips" role="radiogroup" aria-labelledby="cat-chips-label"></div>
+      <input type="hidden" id="exp-cat">
+
+      <label class="toggle-row">
+        <span class="toggle-text"><b>Descontar de otra categoría</b><small>Por excepción · se reporta como su tipo real</small></span>
+        <input type="checkbox" class="switch" id="exp-other">
+      </label>
+      <div id="charge-box" class="hidden">
+        <div class="field-label" id="charge-chips-label">Descontar de:</div>
+        <div class="chip-grid" id="charge-chips" role="radiogroup" aria-labelledby="charge-chips-label"></div>
+        <input type="hidden" id="exp-charge">
+      </div>
+
+      <label class="toggle-row">
+        <span class="toggle-text"><b>Pagar en cuotas</b><small>El monto total se reparte, una cuota por período</small></span>
+        <input type="checkbox" class="switch" id="exp-inst">
+      </label>
+      <div id="exp-inst-box" class="hidden inst-box">
+        <label class="field-label" for="exp-cuotas">Número de cuotas</label>
+        <input class="input" type="number" id="exp-cuotas" min="2" max="48" step="1" inputmode="numeric" value="3">
+        <p class="hint" id="exp-inst-hint"></p>
+      </div>
+
+      <label class="field-label" for="exp-desc">Descripción</label>
+      <input class="input" type="text" id="exp-desc" placeholder="Ej. Supermercado La Torre" maxlength="120">
+
+      <div class="field-label" id="date-label">Fecha</div>
+      <div class="date-chips" role="group" aria-labelledby="date-label">
+        <button type="button" class="chip-pill active" data-date="hoy">Hoy</button>
+        <button type="button" class="chip-pill" data-date="ayer">Ayer</button>
+        <button type="button" class="chip-pill" data-date="otra"><span data-icon="calendario" data-size="16"></span><span id="date-other-label">Otra fecha</span></button>
+      </div>
+      <input class="input date-input hidden" type="date" id="exp-date" aria-label="Fecha del gasto">
+
+      <div class="sheet-footer">
+        <button type="submit" class="btn-primary" id="exp-submit" disabled>Registrar Q0.00</button>
+      </div>
+    </form>
   </div>
 </div>
 
-<!-- CONFIRMACIÓN DE GASTO -->
-<div class="overlay" id="confirm-overlay">
-  <div class="modal">
-    <div class="confirm-header">
-      <div class="confirm-icon" id="confirm-icon">✓</div>
-      <div>
-        <div class="confirm-title" id="confirm-title">Gasto registrado</div>
-        <div class="confirm-sub" id="confirm-sub">—</div>
+<!-- HOJA: EDITAR GASTO -->
+<div class="sheet-backdrop" id="edit-exp-sheet" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ee-title">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-bar">
+      <button class="link-btn" type="button" data-close>Cancelar</button>
+      <h2 class="sheet-title" id="ee-title">Editar gasto</h2>
+      <span class="sheet-bar-spacer"></span>
+    </div>
+    <form id="edit-exp-form" class="sheet-body">
+      <label class="field-label" for="ee-desc">Descripción</label>
+      <input class="input" type="text" id="ee-desc" maxlength="120" required>
+      <div class="two-cols">
+        <div><label class="field-label" for="ee-amount">Monto (Q)</label><input class="input" type="number" id="ee-amount" min="0" step="0.01" inputmode="decimal" required></div>
+        <div><label class="field-label" for="ee-date">Fecha</label><input class="input" type="date" id="ee-date" required></div>
       </div>
-    </div>
-    <div class="confirm-cats" id="confirm-cats"></div>
-    <div class="confirm-footer">
-      <div class="confirm-total">Disponible en <span id="confirm-period"></span>: <span id="confirm-total-avail">—</span></div>
-      <button class="btn" id="confirm-close">Entendido</button>
-    </div>
+      <label class="field-label" for="ee-cat">Categoría</label>
+      <select class="input" id="ee-cat" required></select>
+      <label class="toggle-row">
+        <span class="toggle-text"><b>Descontar de otra categoría</b><small>Por excepción · se reporta como su tipo real</small></span>
+        <input type="checkbox" class="switch" id="ee-other">
+      </label>
+      <select class="input hidden" id="ee-charge" aria-label="Categoría de donde se descuenta"></select>
+      <p class="hint hidden" id="ee-hint"></p>
+      <div class="sheet-footer stack">
+        <button type="submit" class="btn-primary">Guardar cambios</button>
+        <button type="button" class="btn-text-danger" id="ee-delete">Eliminar gasto</button>
+      </div>
+    </form>
   </div>
 </div>
 
-<!-- EDITAR GASTO -->
-<div class="overlay" id="edit-exp-overlay">
-  <form class="modal" id="edit-exp-form">
-    <div class="form-title">Editar gasto</div>
-    <div class="form-grid">
-      <div class="form-group full"><label for="ee-desc">Descripción</label><input type="text" id="ee-desc" maxlength="120" required></div>
-      <div class="form-group"><label for="ee-amount">Monto (Q)</label><input type="number" id="ee-amount" min="0" step="0.01" inputmode="decimal" required></div>
-      <div class="form-group"><label for="ee-cat">Categoría</label><select id="ee-cat" required></select></div>
-      <div class="form-group full other-cat">
-        <label class="check"><input type="checkbox" id="ee-other"> Descontarlo de otra categoría</label>
-        <select id="ee-charge" class="hidden" aria-label="Categoría de donde se descuenta"></select>
+<!-- HOJA: CATEGORÍA (nueva / editar) -->
+<div class="sheet-backdrop" id="cat-sheet" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cat-sheet-title">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-bar">
+      <button class="link-btn" type="button" data-close>Cancelar</button>
+      <h2 class="sheet-title" id="cat-sheet-title">Nueva categoría</h2>
+      <span class="sheet-bar-spacer"></span>
+    </div>
+    <form id="cat-form" class="sheet-body">
+      <label class="field-label" for="cat-name">Nombre</label>
+      <input class="input" type="text" id="cat-name" placeholder="Ej. Farmacia" maxlength="40" required>
+      <div class="two-cols">
+        <div><label class="field-label" for="cat-limit">Presupuesto por período (Q)</label><input class="input" type="number" id="cat-limit" min="0" step="0.01" inputmode="decimal" required></div>
+        <div><label class="field-label" for="cat-threshold">Avisar al (%)</label><input class="input" type="number" id="cat-threshold" value="80" min="1" max="100" required></div>
       </div>
-      <div class="form-group full"><label for="ee-date">Fecha</label><input type="date" id="ee-date" required></div>
-    </div>
-    <p class="form-hint hidden" id="ee-hint" style="margin:12px 0 0"></p>
-    <div class="modal-actions">
-      <button type="button" class="btn-outline" data-close>Cancelar</button>
-      <button type="submit" class="btn">Guardar cambios</button>
-    </div>
-  </form>
+      <p class="hint" id="cat-hint"></p>
+      <div class="sheet-footer stack">
+        <button type="submit" class="btn-primary" id="cat-submit">Guardar categoría</button>
+        <button type="button" class="btn-text-danger hidden" id="cat-delete">Quitar categoría</button>
+      </div>
+    </form>
+  </div>
 </div>
 
-<!-- EDITAR CATEGORÍA -->
-<div class="overlay" id="edit-cat-overlay">
-  <form class="modal" id="edit-cat-form">
-    <div class="form-title">Editar categoría</div>
-    <div class="form-grid">
-      <div class="form-group full"><label for="ec-name">Nombre</label><input type="text" id="ec-name" maxlength="40" required></div>
-      <div class="form-group"><label for="ec-limit">Límite (Q)</label><input type="number" id="ec-limit" min="0" step="0.01" inputmode="decimal" required></div>
-      <div class="form-group"><label for="ec-threshold">Avisar al (%)</label><input type="number" id="ec-threshold" min="1" max="100" required></div>
-    </div>
-    <p class="form-hint" style="margin:12px 0 0" id="ec-hint"></p>
-    <div class="modal-actions">
-      <button type="button" class="btn-outline" data-close>Cancelar</button>
-      <button type="submit" class="btn">Guardar cambios</button>
-    </div>
-  </form>
-</div>
-
+<div class="toast-zone" id="toast-zone" aria-live="polite"></div>
 </body>
 </html>
