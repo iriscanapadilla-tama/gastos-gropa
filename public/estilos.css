@@ -200,11 +200,11 @@ select.input { appearance: auto; }
 .hero-amount.negative { color: var(--over-on-hero); }
 .hero-spent { font-size: 13px; color: var(--hero-text-secondary); margin-top: 4px; position: relative; }
 .hero-spent b { color: var(--hero-text); font-weight: 700; }
-.hero-bar { position: relative; height: 10px; margin: 22px 0 8px; }
+.hero-bar { position: relative; height: 10px; margin: 20px 0 10px; }
 .hero-segs { display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: var(--hero-track); }
 .hero-segs span { height: 100%; }
 .hero-ideal { position: absolute; top: -5px; width: 2px; height: 20px; background: #fff; border-radius: 2px; }
-.hero-beetle { position: absolute; top: -22px; color: #fff; transform: rotate(90deg); }
+.hero-beetle { position: absolute; top: -7px; z-index: 2; padding: 2px; border-radius: 50%; background: var(--hero-bg); color: #fff; transform: rotate(90deg); box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.35); }
 .hero-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--hero-text-secondary); position: relative; }
 .hero-minis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; position: relative; }
 .hero-mini { background: var(--hero-chip-bg); border-radius: 14px; padding: 10px 12px; }
