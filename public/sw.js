@@ -2,8 +2,8 @@
 // Las páginas se piden primero al servidor (siempre la versión más nueva);
 // la copia guardada solo se usa si no hay conexión. Los datos (/api) nunca
 // se guardan aquí.
-const CACHE = 'gastos-v5';
-const SHELL = ['/', '/app.js', '/estilos.css', '/manifest.webmanifest', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png'];
+const CACHE = 'gastos-v6';
+const SHELL = ['/', '/app.js', '/estilos.css', '/manifest.webmanifest', '/iconos/iris-192.png', '/iconos/iris-apple-180.png'];
 // Si la red tarda más de esto, se abre la copia guardada (señal débil).
 const NETWORK_TIMEOUT = 4000;
 

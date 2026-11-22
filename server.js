@@ -411,7 +411,7 @@ function serveStatic(req, res, url) {
   const ext = path.extname(file).toLowerCase();
   res.writeHead(200, {
     'Content-Type': TYPES[ext] || 'application/octet-stream',
-    'Cache-Control': ext === '.png' ? 'public, max-age=86400' : 'no-cache',
+    'Cache-Control': 'no-cache', // el celular siempre revisa si hay una versión nueva (íconos incluidos)
     'X-Content-Type-Options': 'nosniff',
   });
   fs.createReadStream(file).pipe(res);
