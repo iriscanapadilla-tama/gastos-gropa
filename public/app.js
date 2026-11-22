@@ -621,15 +621,8 @@ function deltaHtml(d) {
 function renderStats(p) {
   const prev = periodFromStart(p.startYear, p.startMonth - 1);
   const exps = expensesIn(p);
-  const cut = isCurrentPeriod(p);
-  // En el período en curso se compara contra el mismo día del período anterior.
-  let prevExps = expensesIn(prev);
-  if (cut) {
-    const limit = periodStart(prev);
-    limit.setDate(limit.getDate() + dayOfPeriod(p) - 1);
-    const limStr = ymd(limit);
-    prevExps = prevExps.filter((e) => e.date <= limStr);
-  }
+  // Siempre se compara contra el período anterior completo.
+  const prevExps = expensesIn(prev);
   const total = exps.reduce((s, e) => s + e.amount, 0);
   const prevTotal = prevExps.reduce((s, e) => s + e.amount, 0);
   const prevName = MF[prev.startMonth].toLowerCase();
@@ -640,7 +633,7 @@ function renderStats(p) {
   $('st-count').textContent = exps.length;
   $('st-count-note').textContent = `${prevExps.length} en ${prevName}`;
   $('st-avg').textContent = fmtKpi(exps.length ? total / exps.length : 0);
-  $('st-note').textContent = cut ? 'Comparado contra el mismo día del período anterior.' : 'Comparado contra el período anterior completo.';
+  $('st-note').textContent = 'Comparado contra el período anterior completo.';
 
   // Dona: en qué se fue el dinero (por tipo real de gasto)
   const parts = categories.map((c) => ({ c, v: spentReal(exps, c.id) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
