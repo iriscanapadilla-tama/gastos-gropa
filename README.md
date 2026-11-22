@@ -1,6 +1,6 @@
 # Gastos familiares
 
-App para registrar los gastos de la casa entre Iris y Sebas, por período (del 22 de un mes al 21 del siguiente), con límites por categoría.
+App para registrar los gastos de la casa entre Iris y Sebas, por período (del 22 de un mes al 21 del siguiente), con límites por categoría. Cada período se nombra por el mes en que termina: del 22 de noviembre al 21 de diciembre es "Diciembre".
 
 Corre en su propio servidor (`gropa-server`) y se abre con Tailscale. La guía paso a paso está en [`ayuda/GUIA-INSTALACION.md`](ayuda/GUIA-INSTALACION.md).
 
