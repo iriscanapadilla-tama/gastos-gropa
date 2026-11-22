@@ -182,7 +182,7 @@ function fillCharge(selectEl, catId, selected) {
 function renderRegistrar(p) {
   const sel = $('exp-cat');
   const prev = sel.value;
-  sel.innerHTML = catOptions();
+  sel.innerHTML = activeCats().length ? catOptions() : '<option value="">Sin categorías todavía</option>';
   if (prev && activeCats().some((c) => c.id === prev)) sel.value = prev;
   fillCharge($('exp-charge'), sel.value, $('exp-charge').value);
   if (!$('exp-date').value) $('exp-date').value = todayLocal();
@@ -195,7 +195,9 @@ function renderRegistrar(p) {
   });
   $('mini-summary').innerHTML = rows.length
     ? `<div class="mini-row" style="font-weight:600;color:#444"><span>Disponible en ${esc(periodLabel(p))}</span></div>${rows.join('')}`
-    : '<div class="mini-row">Primero crea una categoría en la pestaña Categorías.</div>';
+    : (categories.length || expenses.length
+      ? '<div class="mini-row">Primero crea una categoría en la pestaña Categorías.</div>'
+      : '<div class="mini-row" style="display:block;line-height:1.5">Todavía no hay categorías. Si vienen de la versión anterior, ve a <a href="#" data-go="datos">Datos → Traer datos de Firebase</a>. Si empiezan de cero, créenlas en <a href="#" data-go="categorias">Categorías</a>.</div>');
 }
 
 function renderResumen(p) {
@@ -657,6 +659,7 @@ function bindEvents() {
   $('btn-hoy').addEventListener('click', () => { periodOffset = 0; renderAll(); });
   $('tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) showTab(t.dataset.tab); });
   $('exp-form').addEventListener('submit', addExpense);
+  $('mini-summary').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); showTab(g.dataset.go); } });
   // "Descontar de otra categoría": mostrar u ocultar la lista y no ofrecer la misma categoría.
   for (const [chk, cat, chg] of [['exp-other', 'exp-cat', 'exp-charge'], ['ee-other', 'ee-cat', 'ee-charge']]) {
     $(chk).addEventListener('change', () => { fillCharge($(chg), $(cat).value, $(chg).value); $(chg).classList.toggle('hidden', !$(chk).checked); });
