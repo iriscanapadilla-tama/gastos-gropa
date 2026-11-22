@@ -168,3 +168,5 @@ input:focus,select:focus{border-color:#888}
 .pend-tag.pend-error{background:#fee2e2;color:#991b1b}
 .offline-banner{background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.45;margin-bottom:1rem}
 .offline-banner b{font-weight:600}
+.inst-box{display:flex;flex-direction:column;gap:5px;max-width:260px}
+.cuota-tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;background:#e0f2fe;color:#075985;font-weight:600;margin-left:2px;vertical-align:middle}

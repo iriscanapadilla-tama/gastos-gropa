@@ -74,11 +74,19 @@
       <div class="form-card">
         <div class="form-title">Registrar gasto</div>
         <form id="exp-form" class="form-grid">
-          <div class="form-group"><label for="exp-amount">Monto (Q)</label><input class="amount-input" type="number" id="exp-amount" placeholder="0.00" min="0" step="0.01" inputmode="decimal" required></div>
+          <div class="form-group"><label for="exp-amount" id="exp-amount-label">Monto (Q)</label><input class="amount-input" type="number" id="exp-amount" placeholder="0.00" min="0" step="0.01" inputmode="decimal" required></div>
           <div class="form-group"><label for="exp-cat">Categoría</label><select id="exp-cat" required></select></div>
           <div class="form-group full other-cat">
             <label class="check"><input type="checkbox" id="exp-other"> Descontarlo de otra categoría (por excepción)</label>
             <select id="exp-charge" class="hidden" aria-label="Categoría de donde se descuenta"></select>
+          </div>
+          <div class="form-group full other-cat">
+            <label class="check"><input type="checkbox" id="exp-inst"> Pagar en cuotas</label>
+            <div id="exp-inst-box" class="hidden inst-box">
+              <label for="exp-cuotas">Número de cuotas</label>
+              <input type="number" id="exp-cuotas" min="2" max="48" step="1" inputmode="numeric" value="3">
+              <p class="form-hint" id="exp-inst-hint" style="margin:6px 0 0"></p>
+            </div>
           </div>
           <div class="form-group full"><label for="exp-desc">Descripción</label><input type="text" id="exp-desc" placeholder="Ej. Supermercado La Torre" maxlength="120" required></div>
           <div class="form-group"><label for="exp-date">Fecha</label><input type="date" id="exp-date" required></div>
@@ -96,6 +104,10 @@
         <div class="card"><div class="card-label">Disponible</div><div class="card-value" id="s-avail">Q0.00</div></div>
       </div>
       <div class="cat-list" id="cat-list-resumen"></div>
+      <div class="form-card hidden" id="plans-card" style="margin-top:1rem">
+        <div class="form-title">Compras en cuotas</div>
+        <div id="plans-list"></div>
+      </div>
       <div class="empty hidden" id="empty-resumen">No hay categorías para este período.</div>
     </div>
 
@@ -225,6 +237,7 @@
       </div>
       <div class="form-group full"><label for="ee-date">Fecha</label><input type="date" id="ee-date" required></div>
     </div>
+    <p class="form-hint hidden" id="ee-hint" style="margin:12px 0 0"></p>
     <div class="modal-actions">
       <button type="button" class="btn-outline" data-close>Cancelar</button>
       <button type="submit" class="btn">Guardar cambios</button>

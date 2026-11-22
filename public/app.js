@@ -82,10 +82,17 @@ function newClientId() {
 const myPending = () => (me ? pending.filter((p) => p.userId === me.id) : []);
 function savePending() { lsSet(LS_PENDIENTES, pending); }
 function mergePending() {
-  expenses = serverExpenses.concat(myPending().map((p) => ({
-    ...p.body, id: 'pendiente-' + p.clientId, clientId: p.clientId, userId: me.id, user: me.displayName,
-    ts: p.createdAt, pending: true, error: p.error || null,
-  })));
+  const rows = [];
+  for (const p of myPending()) {
+    const base = { ...p.body, clientId: p.clientId, userId: me.id, user: me.displayName, ts: p.createdAt, pending: true, error: p.error || null };
+    const n = Number(p.body.cuotas) || 1;
+    if (n === 1) { rows.push({ ...base, id: 'pendiente-' + p.clientId }); continue; }
+    splitCuotas(p.body.amount, n).forEach((amount, k) => rows.push({
+      ...base, id: `pendiente-${p.clientId}-${k}`, amount, date: cuotaDate(p.body.date, k),
+      planId: 'pendiente-' + p.clientId, cuota: k + 1, cuotas: n, planTotal: p.body.amount,
+    }));
+  }
+  expenses = serverExpenses.concat(rows);
 }
 function pendingNote() {
   const n = myPending().length;
@@ -119,7 +126,8 @@ async function syncPending() {
 
 function removePending(clientId) {
   const p = pending.find((x) => x.clientId === clientId); if (!p) return;
-  if (!confirm(`¿Quitar "${p.body.desc}" por ${fmt(p.body.amount)}? Todavía no se subió al servidor.`)) return;
+  const what = Number(p.body.cuotas) > 1 ? `la compra en ${p.body.cuotas} cuotas "${p.body.desc}" (total ${fmt(p.body.amount)})` : `"${p.body.desc}" por ${fmt(p.body.amount)}`;
+  if (!confirm(`¿Quitar ${what}? Todavía no se subió al servidor.`)) return;
   pending = pending.filter((x) => x.clientId !== clientId);
   savePending(); mergePending(); renderAll();
 }
@@ -188,6 +196,21 @@ function periodOfDate(ds) {
   const [y, m, d] = ds.split('-').map(Number);
   return periodFromStart(y, (m - 1) - (d < CUT_DAY ? 1 : 0));
 }
+// Mismo cálculo que el servidor para las compras en cuotas: la primera cuota
+// cae el día de la compra; las siguientes, el 22 de cada corte.
+function cuotaDate(first, k) {
+  if (k === 0) return first;
+  const [y, m, d] = first.split('-').map(Number);
+  const t = (m - 1) - (d < CUT_DAY ? 1 : 0) + k;
+  const ny = y + Math.floor(t / 12), nm = ((t % 12) + 12) % 12;
+  return `${ny}-${pad(nm + 1)}-${pad(CUT_DAY)}`;
+}
+function splitCuotas(total, n) {
+  const per = Math.floor((total / n) * 100) / 100;
+  return Array.from({ length: n }, (_, k) => (k < n - 1 ? per : Math.round((total - per * (n - 1)) * 100) / 100));
+}
+const cuotaTag = (e) => (e.cuotas ? ` <span class="cuota-tag">Cuota ${e.cuota}/${e.cuotas}</span>` : '');
+
 function getPeriod(offset) {
   const base = periodOfDate(todayLocal());
   return periodFromStart(base.startYear, base.startMonth + offset);
@@ -321,11 +344,38 @@ function renderResumen(p) {
       </div>${notes.map((n) => `<div class="cat-note">${n}</div>`).join('')}`;
     list.appendChild(row);
   }
+  renderPlans(p);
   const avail = totBudget - totSpent;
   $('s-budget').textContent = fmt(totBudget);
   $('s-spent').textContent = fmt(totSpent);
   $('s-avail').textContent = fmt(avail);
   $('s-avail').className = 'card-value ' + (avail < 0 ? 'danger' : avail < totBudget * 0.2 ? 'warn' : 'ok');
+}
+
+// Compras en cuotas que tienen una cuota en este período. Cuando pasa la
+// última cuota, la compra deja de aparecer.
+function renderPlans(p) {
+  const groups = new Map();
+  for (const e of expenses) if (e.planId) (groups.get(e.planId) || groups.set(e.planId, []).get(e.planId)).push(e);
+  const rows = [];
+  for (const list of groups.values()) {
+    list.sort((x, y) => x.cuota - y.cuota);
+    const now = list.find((e) => periodOfDate(e.date).key === p.key);
+    if (!now) continue;
+    const after = list.filter((e) => periodOfDate(e.date).key > p.key);
+    const left = after.reduce((s, e) => s + e.amount, 0);
+    const last = list[list.length - 1];
+    rows.push(`<div class="exp-item">
+      <div class="exp-left">
+        <span class="exp-name">${esc(now.desc)}${now.pending ? ' <span class="pend-tag">Pendiente de subir</span>' : ''}</span>
+        <span class="exp-meta">Cuota ${now.cuota} de ${now.cuotas} · ${catLabel(now)} · total ${fmt(now.planTotal || 0)}</span>
+        <span class="exp-meta">${after.length ? `${after.length === 1 ? 'Falta 1 cuota' : `Faltan ${after.length} cuotas`} (${fmt(left)}) · termina en ${esc(periodLabel(periodOfDate(last.date)))}` : 'Es la última cuota'}</span>
+      </div>
+      <div class="exp-right"><span class="exp-amount">${fmt(now.amount)}</span></div>
+    </div>`);
+  }
+  $('plans-card').classList.toggle('hidden', rows.length === 0);
+  $('plans-list').innerHTML = rows.join('');
 }
 
 function renderGastos(p) {
@@ -354,7 +404,7 @@ function renderGastos(p) {
   $('expense-list').innerHTML = shown.map((e) => `
     <div class="exp-item">
       <div class="exp-left">
-        <span class="exp-name">${esc(e.desc)}</span>
+        <span class="exp-name">${esc(e.desc)}${cuotaTag(e)}</span>
         <span class="exp-meta">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}${e.editedAt ? ' · editado' : ''}</span>
         ${e.pending ? (e.error ? `<span class="pend-tag pend-error">No se pudo subir: ${esc(e.error)}</span>` : '<span class="pend-tag">Pendiente de subir</span>') : ''}
       </div>
@@ -463,7 +513,7 @@ function renderStats(p) {
   // Los 5 gastos más grandes
   const top = exps.slice().sort((a, b) => b.amount - a.amount).slice(0, 5);
   $('st-top').innerHTML = top.length
-    ? top.map((e, i) => `<div class="top-item"><span><span class="top-rank">${i + 1}</span>${esc(e.desc)}<br><span class="exp-meta" style="margin-left:18px">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}</span></span><b>${fmt(e.amount)}</b></div>`).join('')
+    ? top.map((e, i) => `<div class="top-item"><span><span class="top-rank">${i + 1}</span>${esc(e.desc)}${cuotaTag(e)}<br><span class="exp-meta" style="margin-left:18px">${catLabel(e)} · ${fmtDate(e.date)} · ${esc(userName(e))}</span></span><b>${fmt(e.amount)}</b></div>`).join('')
     : '<div class="empty">Sin gastos en este período.</div>';
 }
 
@@ -477,12 +527,18 @@ async function addExpense(ev) {
     chargeCatId: $('exp-other').checked ? $('exp-charge').value : null,
   };
   if ($('exp-other').checked && !body.chargeCatId) { alert('Elige de qué categoría se descuenta.'); return; }
+  if ($('exp-inst').checked) {
+    const n = Number($('exp-cuotas').value);
+    if (!Number.isInteger(n) || n < 2 || n > 48) { alert('El número de cuotas debe estar entre 2 y 48.'); return; }
+    body.cuotas = n;
+  }
   if (!body.desc || !(body.amount > 0) || !body.catId || !body.date) { alert('Completa monto, categoría, descripción y fecha.'); return; }
   body.clientId = newClientId();
   $('exp-submit').disabled = true;
   const clearForm = () => {
     $('exp-desc').value = ''; $('exp-amount').value = '';
     $('exp-other').checked = false; $('exp-charge').classList.add('hidden');
+    $('exp-inst').checked = false; updateInstallments();
   };
   try {
     setSyncStatus('loading');
@@ -507,12 +563,28 @@ async function addExpense(ev) {
   } finally { $('exp-submit').disabled = false; }
 }
 
+// Muestra u oculta las opciones de cuotas y explica cómo quedarían.
+function updateInstallments() {
+  const on = $('exp-inst').checked;
+  $('exp-inst-box').classList.toggle('hidden', !on);
+  $('exp-amount-label').textContent = on ? 'Monto total (Q)' : 'Monto (Q)';
+  if (!on) return;
+  const n = Number($('exp-cuotas').value), total = parseFloat($('exp-amount').value), ds = $('exp-date').value;
+  if (!Number.isInteger(n) || n < 2 || n > 48) { $('exp-inst-hint').textContent = 'Elige entre 2 y 48 cuotas.'; return; }
+  if (!(total > 0) || !ds) { $('exp-inst-hint').textContent = 'Escribe el monto total y la fecha de compra para ver las cuotas.'; return; }
+  const parts = splitCuotas(total, n);
+  const first = periodLabel(periodOfDate(ds)), last = periodLabel(periodOfDate(cuotaDate(ds, n - 1)));
+  const diff = parts[n - 1] !== parts[0] ? ` (la última de ${fmt(parts[n - 1])})` : '';
+  $('exp-inst-hint').textContent = `${n} cuotas de ${fmt(parts[0])}${diff}, una por período de ${first} a ${last}. La primera se descuenta en la fecha de compra y las siguientes el ${CUT_DAY} de cada corte.`;
+}
+
 function showConfirm(exp) {
   const p = periodOfDate(exp.date);
   const exps = expensesIn(p);
-  $('confirm-title').textContent = exp.pending ? 'Guardado en este celular' : `Gasto registrado por ${me.displayName}`;
+  $('confirm-title').textContent = exp.pending ? 'Guardado en este celular' : exp.cuotas ? `Compra en ${exp.cuotas} cuotas registrada` : `Gasto registrado por ${me.displayName}`;
   $('confirm-sub').textContent = `${exp.desc} — ${fmt(exp.amount)} en ${catName(exp.catId)}`
     + (exp.chargeCatId ? `, descontado de ${catName(exp.chargeCatId)}` : '')
+    + (exp.cuotas ? `. Cuota 1 de ${exp.cuotas} (total ${fmt(exp.planTotal)}); la última cae en ${periodLabel(periodOfDate(cuotaDate(exp.date, exp.cuotas - 1)))}` : '')
     + (exp.pending ? '. No hay conexión: se subirá solo cuando vuelva.' : '');
   $('confirm-icon').textContent = exp.pending ? '⏳' : '✓';
   $('confirm-icon').style.background = exp.pending ? '#fef3c7' : '#dcfce7';
@@ -551,6 +623,8 @@ function openEditExpense(id) {
   $('ee-other').checked = !!e.chargeCatId;
   fillCharge($('ee-charge'), e.catId, e.chargeCatId);
   $('ee-charge').classList.toggle('hidden', !e.chargeCatId);
+  $('ee-hint').textContent = e.cuotas ? `Es la cuota ${e.cuota} de ${e.cuotas}. La descripción y la categoría cambian en todas las cuotas; el monto y la fecha, solo en esta.` : '';
+  $('ee-hint').classList.toggle('hidden', !e.cuotas);
   $('edit-exp-overlay').classList.add('open');
 }
 
@@ -571,7 +645,10 @@ async function saveEditExpense(ev) {
 
 async function deleteExpense(id) {
   const e = expenses.find((x) => x.id === id); if (!e) return;
-  if (!confirm(`¿Eliminar "${e.desc}" por ${fmt(e.amount)}?`)) return;
+  const text = e.cuotas
+    ? `"${e.desc}" es una compra en ${e.cuotas} cuotas (total ${fmt(e.planTotal || 0)}).\n\n¿Eliminar la compra completa? Se borran todas sus cuotas.`
+    : `¿Eliminar "${e.desc}" por ${fmt(e.amount)}?`;
+  if (!confirm(text)) return;
   try { await mutate(`/api/gastos/${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch {}
 }
 
@@ -782,6 +859,8 @@ function bindEvents() {
   $('btn-hoy').addEventListener('click', () => { periodOffset = 0; renderAll(); });
   $('tabs').addEventListener('click', (e) => { const t = e.target.closest('[data-tab]'); if (t) showTab(t.dataset.tab); });
   $('exp-form').addEventListener('submit', addExpense);
+  ['exp-inst', 'exp-cuotas', 'exp-amount', 'exp-date'].forEach((id) => $(id).addEventListener('input', updateInstallments));
+  $('exp-inst').addEventListener('change', updateInstallments);
   $('mini-summary').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) { e.preventDefault(); showTab(g.dataset.go); } });
   // "Descontar de otra categoría": mostrar u ocultar la lista y no ofrecer la misma categoría.
   for (const [chk, cat, chg] of [['exp-other', 'exp-cat', 'exp-charge'], ['ee-other', 'ee-cat', 'ee-charge']]) {

@@ -119,6 +119,23 @@ function chargeCategory(s, b) {
   return v;
 }
 
+// Fecha de cada cuota: la primera cae el día de la compra; las siguientes,
+// el 22 (día en que empieza cada corte), una por período.
+const CUT_DAY = 22;
+function cuotaDate(first, k) {
+  if (k === 0) return first;
+  const [y, m, d] = first.split('-').map(Number);
+  const t = (m - 1) - (d < CUT_DAY ? 1 : 0) + k; // mes en que empieza el corte de la cuota k
+  const ny = y + Math.floor(t / 12), nm = ((t % 12) + 12) % 12;
+  return `${ny}-${String(nm + 1).padStart(2, '0')}-${CUT_DAY}`;
+}
+
+// Reparte un total en n cuotas iguales; la última ajusta los centavos.
+function splitCuotas(total, n) {
+  const per = Math.floor((total / n) * 100) / 100;
+  return Array.from({ length: n }, (_, k) => (k < n - 1 ? per : money(total - per * (n - 1))));
+}
+
 function payload() {
   const s = store.get();
   return { categories: s.categories, expenses: s.expenses, users: readConfig().usuarios.map(publicUser) };
@@ -268,8 +285,25 @@ async function api(req, res, url) {
     };
     if (!s.categories.some((c) => c.id === exp.catId)) fail(400, 'La categoría no existe.');
     if (!isDate(exp.date)) fail(400, 'La fecha no es válida.');
-    store.mutate((st) => { st.expenses.push(exp); });
-    return send(res, 200, { ...payload(), created: exp });
+
+    // Compra en cuotas: se crea una cuota por período, desde la fecha de compra.
+    const n = b.cuotas == null || b.cuotas === '' ? 1 : Number(b.cuotas);
+    if (!Number.isInteger(n) || n < 1 || n > 48) fail(400, 'El número de cuotas debe estar entre 2 y 48.');
+    if (n === 1) {
+      store.mutate((st) => { st.expenses.push(exp); });
+      return send(res, 200, { ...payload(), created: exp });
+    }
+    const amounts = splitCuotas(exp.amount, n);
+    if (amounts[0] <= 0) fail(400, 'El monto es muy bajo para tantas cuotas.');
+    const planId = auth.newId();
+    const list = amounts.map((amount, k) => ({
+      ...exp, id: k === 0 ? exp.id : auth.newId(), amount, date: cuotaDate(exp.date, k), ts: exp.ts + k,
+      planId, cuota: k + 1, cuotas: n, planTotal: exp.amount,
+      ...(k === 0 && clientId ? { clientId } : { clientId: undefined }),
+    }));
+    for (const e of list) if (e.clientId === undefined) delete e.clientId;
+    store.mutate((st) => { st.expenses.push(...list); });
+    return send(res, 200, { ...payload(), created: list[0] });
   }
 
   let m = p.match(/^\/api\/gastos\/([\w-]+)$/);
@@ -278,7 +312,10 @@ async function api(req, res, url) {
     if (!exp) fail(404, 'Ese gasto ya no existe. Recarga la página.');
     if (exp.userId !== me.id) fail(403, 'Solo quien registró el gasto puede cambiarlo.');
     if (method === 'DELETE') {
-      store.mutate((st) => { st.expenses = st.expenses.filter((e) => e.id !== exp.id); });
+      // En una compra en cuotas se borran todas sus cuotas.
+      store.mutate((st) => {
+        st.expenses = st.expenses.filter((e) => (exp.planId ? e.planId !== exp.planId : e.id !== exp.id));
+      });
       return send(res, 200, payload());
     }
     const b = await readBody(req);
@@ -288,7 +325,15 @@ async function api(req, res, url) {
     };
     if (!s.categories.some((c) => c.id === changes.catId)) fail(400, 'La categoría no existe.');
     if (!isDate(changes.date)) fail(400, 'La fecha no es válida.');
-    store.mutate(() => Object.assign(exp, changes));
+    store.mutate((st) => {
+      Object.assign(exp, changes);
+      // En cuotas: descripción y categorías cambian en todas; monto y fecha, solo en esta.
+      if (exp.planId) {
+        for (const e of st.expenses) {
+          if (e.planId === exp.planId && e !== exp) Object.assign(e, { desc: changes.desc, catId: changes.catId, chargeCatId: changes.chargeCatId });
+        }
+      }
+    });
     return send(res, 200, payload());
   }
 
