@@ -1,0 +1,21 @@
+# Gastos familiares en el servidor gropa-server.
+# Un contenedor de Node corre la app de ~/gastos/app y guarda los datos
+# en ~/gastos/datos. Solo escucha dentro de la laptop (127.0.0.1:8097);
+# Tailscale la publica con HTTPS.
+services:
+  gastos:
+    image: node:22-alpine
+    container_name: gastos
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "server.js"]
+    user: "${UID_GASTOS:-1000}:${GID_GASTOS:-1000}"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/datos
+      - TZ=America/Guatemala
+    ports:
+      - "127.0.0.1:8097:8080"
+    volumes:
+      - ./app:/app:ro
+      - ./datos:/datos

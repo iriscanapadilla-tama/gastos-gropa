@@ -1,0 +1,13 @@
+{
+  "firebase": {
+    "apiKey": "PEGA_AQUI",
+    "authDomain": "PEGA_AQUI",
+    "projectId": "PEGA_AQUI",
+    "appId": "PEGA_AQUI"
+  },
+  "usuarios": [
+    { "correo": "CORREO_DE_IRIS@gmail.com", "nombre": "Iris" },
+    { "correo": "CORREO_DE_SEBAS@gmail.com", "nombre": "Sebas" }
+  ],
+  "proyectoFirebaseAnterior": "gastos-gropa"
+}
