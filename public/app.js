@@ -208,7 +208,8 @@ function getPeriod(offset) {
   const base = periodOfDate(todayLocal());
   return periodFromStart(base.startYear, base.startMonth + offset);
 }
-const periodLabel = (p) => `${MF[p.startMonth]} ${p.startYear}`;
+// Cada período se nombra por el mes en que termina: del 22 nov al 21 dic es "Diciembre".
+const periodLabel = (p) => `${MF[p.endMonth]} ${p.endYear}`;
 const periodDates = (p) => `${CUT_DAY} ${MS[p.startMonth]} ${p.startYear} → ${CUT_DAY - 1} ${MS[p.endMonth]} ${p.endYear}`;
 const expensesIn = (p) => expenses.filter((e) => periodOfDate(e.date).key === p.key);
 
@@ -341,7 +342,7 @@ function dayOfPeriod(p) {
 }
 const isCurrentPeriod = (p) => p.key === getPeriod(0).key;
 const periodRange = (p) => `${CUT_DAY} ${MS[p.startMonth]} – ${CUT_DAY - 1} ${MS[p.endMonth]}`;
-const periodShort = (p) => `${cap(MS[p.startMonth])} ${p.startYear}`;
+const periodShort = (p) => `${cap(MS[p.endMonth])} ${p.endYear}`;
 function ago(ts) {
   const s = Math.round((Date.now() - ts) / 1000);
   if (s < 60) return 'hace un momento';
@@ -625,7 +626,7 @@ function renderStats(p) {
   const prevExps = expensesIn(prev);
   const total = exps.reduce((s, e) => s + e.amount, 0);
   const prevTotal = prevExps.reduce((s, e) => s + e.amount, 0);
-  const prevName = MF[prev.startMonth].toLowerCase();
+  const prevName = MF[prev.endMonth].toLowerCase();
 
   $('st-total').textContent = fmtKpi(total);
   const d = pctChange(total, prevTotal);
@@ -670,13 +671,13 @@ function renderStats(p) {
         <span class="bar-val">${x.spent ? fmtK(x.spent) : ''}</span>
         <div class="bar${x.current ? ' current' : ''}" style="height:${((x.spent / max) * 100).toFixed(2)}%" title="${esc(periodLabel(x.q))}: ${fmt(x.spent)}"></div>
       </div>`).join('');
-  $('st-col-labels').innerHTML = series.map((x) => `<span class="${x.current ? 'current' : ''}">${cap(MS[x.q.startMonth])}</span>`).join('');
+  $('st-col-labels').innerHTML = series.map((x) => `<span class="${x.current ? 'current' : ''}">${cap(MS[x.q.endMonth])}</span>`).join('');
 
   // Comparado con el período anterior
   const both = categories.filter((c) => spentReal(exps, c.id) > 0 || spentReal(prevExps, c.id) > 0 || catsFor(p, exps).includes(c));
   $('st-compare').innerHTML = both.length
     ? `<table class="cmp-table">
-        <thead><tr><th>Categoría</th><th>${esc(cap(MS[prev.startMonth]))}</th><th>${esc(cap(MS[p.startMonth]))}</th><th>Cambio</th></tr></thead>
+        <thead><tr><th>Categoría</th><th>${esc(cap(MS[prev.endMonth]))}</th><th>${esc(cap(MS[p.endMonth]))}</th><th>Cambio</th></tr></thead>
         <tbody>${both.map((c) => {
           const a = spentReal(prevExps, c.id), b = spentReal(exps, c.id);
           return `<tr><td>${esc(c.name)}</td><td>${fmtK(a)}</td><td>${fmtK(b)}</td><td>${deltaHtml(pctChange(b, a))}</td></tr>`;
