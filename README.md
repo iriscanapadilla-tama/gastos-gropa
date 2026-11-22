@@ -26,4 +26,4 @@ Corre en su propio servidor (`gropa-server`) y se abre con Tailscale. La guía p
 - Los datos se guardan en `datos/gastos.json` en el servidor, con respaldo diario (últimos 30 días). Cada gasto se guarda por separado, así que dos registros al mismo tiempo nunca se pisan.
 - El inicio de sesión usa cuentas de Firebase (correo y contraseña). El servidor revisa el comprobante de Google y que el correo esté autorizado en `datos/config.json`, que nunca se sube a GitHub.
 
-`index.html` en la raíz es la versión anterior (GitHub Pages + Firebase). Se borra cuando terminen la migración (paso 9 de la guía).
+La versión anterior (GitHub Pages + Firebase) quedó apagada el 22 de noviembre de 2026: GitHub Pages está desactivado y la base vieja de Firebase está cerrada.
