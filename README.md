@@ -13,6 +13,7 @@ Corre en su propio servidor (`gropa-server`) y se abre con Tailscale. La guía p
 - **Categorías**: crear, editar y quitar. Un límite nuevo aplica desde el período elegido; los anteriores conservan el suyo.
 - **Datos**: exportar a Excel, descargar una copia completa y traer los datos de la versión anterior (Firebase).
 - Se instala en el celular como app, con su propio ícono.
+- **Sin conexión:** abre con la última copia guardada en el celular (con una franja que lo avisa) y permite registrar gastos, que quedan "pendientes de subir" y se suben solos al volver la conexión. Editar, borrar y cambiar categorías siguen necesitando conexión.
 
 ## Cómo está hecha
 

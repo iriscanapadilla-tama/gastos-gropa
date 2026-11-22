@@ -2,8 +2,10 @@
 // Las páginas se piden primero al servidor (siempre la versión más nueva);
 // la copia guardada solo se usa si no hay conexión. Los datos (/api) nunca
 // se guardan aquí.
-const CACHE = 'gastos-v1';
-const SHELL = ['/', '/app.js', '/estilos.css', '/manifest.webmanifest', '/iconos/icono-192.png'];
+const CACHE = 'gastos-v2';
+const SHELL = ['/', '/app.js', '/estilos.css', '/manifest.webmanifest', '/iconos/icono-192.png', '/iconos/apple-touch-icon.png'];
+// Si la red tarda más de esto, se abre la copia guardada (señal débil).
+const NETWORK_TIMEOUT = 4000;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -18,12 +20,17 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
-        return res;
-      })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match('/')))
-  );
+  const fromCache = () => caches.match(e.request).then((r) => r || caches.match('/'));
+  const fromNetwork = fetch(e.request).then((res) => {
+    if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
+    return res;
+  });
+  e.respondWith(new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (!done && r) { done = true; resolve(r); } };
+    const timer = setTimeout(() => fromCache().then((r) => { if (r) finish(r); }), NETWORK_TIMEOUT);
+    fromNetwork
+      .then((r) => { clearTimeout(timer); finish(r); })
+      .catch(() => { clearTimeout(timer); fromCache().then((r) => finish(r || Response.error())); });
+  }));
 });
