@@ -16,6 +16,10 @@ Corre en su propio servidor (`gropa-server`) y se abre con Tailscale. La guía p
 - Se instala en el celular como app, con su propio ícono.
 - **Sin conexión:** abre con la última copia guardada en el celular (con una franja que lo avisa) y permite registrar gastos, que quedan "pendientes de subir" y se suben solos al volver la conexión. Editar, borrar y cambiar categorías siguen necesitando conexión.
 
+## Diseño
+
+Rediseño "Iris & Escarabajo" (nov 2026): barra de navegación inferior (Inicio, Movimientos, botón + para registrar, Estadísticas, Más), registro en una hoja que sube desde abajo, tarjeta principal con lo disponible y el ritmo del período, y un color fijo por categoría. Los colores, radios, espacios y tipografías (Fraunces y Plus Jakarta Sans) están centralizados en las variables de `public/estilos.css`; los colores de cada categoría, en `CAT_THEMES` de `public/app.js`.
+
 ## Cómo está hecha
 
 | Parte | Archivo |
